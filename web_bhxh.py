@@ -5,13 +5,12 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import requests # Dùng thư viện này thay cho google.generativeai để tránh lỗi
-import json
+import google.generativeai as genai # Dùng thư viện chính hãng Google
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH ---
+# --- CẤU HÌNH FILE ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
@@ -121,32 +120,28 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (FIX DỨT ĐIỂM) ---
-def call_gemini_direct(api_key, prompt):
-    # Dùng model gemini-pro (bản ổn định nhất)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"Lỗi từ Google: {response.text}"
-    except Exception as e:
-        return f"Lỗi kết nối: {str(e)}"
-
+# --- CHỨC NĂNG AI: DÙNG THƯ VIỆN CHÍNH HÃNG (BẢN ỔN ĐỊNH NHẤT) ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Ổn định)")
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
     st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
 
     # API Key CỦA BẠN
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
 
+    if not API_KEY:
+        st.warning("⚠️ Chưa có API Key.")
+        return
+
+    # Cấu hình Gemini
+    try:
+        genai.configure(api_key=API_KEY)
+        # SỬ DỤNG MODEL MỚI NHẤT: gemini-1.5-flash
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Lỗi cấu hình AI: {e}")
+        return
+
+    # Giao diện Chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -161,27 +156,30 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                # Dùng to_string để tránh lỗi thư viện
-                data_sample = df.head(10).to_string(index=False)
-                columns_info = ", ".join(df.columns.tolist())
-                total_rows = len(df)
-                
-                context = f"""
-                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                - Tổng số dòng: {total_rows}
-                - Các cột: {columns_info}
-                - Dữ liệu mẫu (10 dòng đầu):
-                {data_sample}
-                
-                Câu hỏi người dùng: "{prompt}"
-                Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
-                """
-                
-                # Gọi hàm trực tiếp
-                tra_loi = call_gemini_direct(API_KEY, context)
-                
-                st.write(tra_loi)
-                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
+                try:
+                    # Chuẩn bị dữ liệu (Dùng to_string để tránh lỗi tabulate)
+                    data_sample = df.head(10).to_string(index=False)
+                    columns_info = ", ".join(df.columns.tolist())
+                    total_rows = len(df)
+                    
+                    context = f"""
+                    Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                    - Tổng số dòng: {total_rows}
+                    - Các cột: {columns_info}
+                    - Dữ liệu mẫu (10 dòng đầu):
+                    {data_sample}
+                    
+                    Câu hỏi người dùng: "{prompt}"
+                    Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
+                    """
+                    
+                    # Gọi AI
+                    response = model.generate_content(context)
+                    
+                    st.write(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                except Exception as e:
+                    st.error(f"Lỗi kết nối: {e}")
 
 # --- MAIN ---
 def main():
