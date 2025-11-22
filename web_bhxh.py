@@ -69,7 +69,6 @@ def tao_file_excel(df_input):
 
 # --- HÀM TẠO CALLBACK ---
 def set_state(name):
-    # Thêm 'admin' vào danh sách trạng thái
     for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai', 'admin']:
         st.session_state[key] = False
     st.session_state[name] = True
@@ -87,7 +86,6 @@ def nap_du_lieu_toi_uu():
         except Exception: pass
 
     if not os.path.exists(EXCEL_FILE):
-        # Trả về DataFrame rỗng nếu chưa có file để vào trang Admin up file
         return pd.DataFrame()
     
     try:
@@ -100,39 +98,21 @@ def nap_du_lieu_toi_uu():
         st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- GIAO DIỆN QUẢN TRỊ (ADMIN UPLOAD) ---
+# --- GIAO DIỆN QUẢN TRỊ ---
 def hien_thi_quan_tri():
     st.markdown("### ⚙️ QUẢN TRỊ HỆ THỐNG & CẬP NHẬT DỮ LIỆU")
-    st.info("💡 Tại đây bạn có thể tải lên file dữ liệu mới (tháng mới). Hệ thống sẽ tự động cập nhật.")
-
     uploaded_file = st.file_uploader("📂 Chọn file Excel dữ liệu (.xlsb)", type=['xlsb'])
-
     if uploaded_file is not None:
-        # Hiển thị thông tin file
-        file_details = {"Tên file": uploaded_file.name, "Kích thước": f"{uploaded_file.size / 1024:.2f} KB"}
-        st.write(file_details)
-
         if st.button("🚀 BẮT ĐẦU CẬP NHẬT DỮ LIỆU"):
             try:
-                with st.spinner("Đang tải file lên và xử lý..."):
-                    # 1. Lưu file Excel đè lên file cũ
-                    with open(EXCEL_FILE, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    
-                    # 2. Xóa cache cũ
+                with st.spinner("Đang xử lý..."):
+                    with open(EXCEL_FILE, "wb") as f: f.write(uploaded_file.getbuffer())
                     st.cache_data.clear()
-                    
-                    # 3. Gọi hàm nạp để tạo lại Parquet mới ngay lập tức
-                    if os.path.exists(PARQUET_FILE):
-                        os.remove(PARQUET_FILE) # Xóa parquet cũ
-                    
+                    if os.path.exists(PARQUET_FILE): os.remove(PARQUET_FILE)
                     nap_du_lieu_toi_uu()
-                    
-                st.success("✅ Cập nhật thành công! Dữ liệu mới đã sẵn sàng.")
+                st.success("✅ Cập nhật thành công!")
                 st.balloons()
-                
-            except Exception as e:
-                st.error(f"Có lỗi xảy ra: {e}")
+            except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
 
 # --- CÁC HÀM HIỂN THỊ ---
 def hien_thi_uu_tien(df_ket_qua):
@@ -140,15 +120,12 @@ def hien_thi_uu_tien(df_ket_qua):
         st.warning("😞 Không tìm thấy kết quả phù hợp.")
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
-    
     excel_data = tao_file_excel(df_ket_qua)
     st.download_button(label="📥 Tải danh sách (Excel)", data=excel_data.getvalue(), file_name=f"danh_sach.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    if len(df_ket_qua) > 50: st.caption(f"⚠️ Đang hiển thị 50/{len(df_ket_qua)} kết quả đầu tiên.")
     
-    if len(df_ket_qua) > 50:
-        st.caption(f"⚠️ Đang hiển thị 50/{len(df_ket_qua)} kết quả đầu tiên.")
-        df_ket_qua = df_ket_qua.head(50)
-
-    for i in range(len(df_ket_qua)):
+    # Chỉ lấy 50 dòng đầu để hiển thị
+    for i in range(min(len(df_ket_qua), 50)):
         row = df_ket_qua.iloc[i]
         tieu_de = f"👤 {row.get('hoTen', 'Na')} - {row.get('soBhxh', '')}"
         with st.expander(tieu_de, expanded=False):
@@ -178,8 +155,7 @@ def hien_thi_loc_loi(df, ten_cot):
         excel_data = tao_file_excel(df_loc)
         st.download_button(label="📥 Tải danh sách lỗi", data=excel_data.getvalue(), file_name=f"loi_{ten_cot}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         st.dataframe(df_loc.head(1000))
-    else:
-        st.success(f"Tuyệt vời! Cột '{ten_cot}' đủ dữ liệu.")
+    else: st.success(f"Tuyệt vời! Cột '{ten_cot}' đủ dữ liệu.")
 
 def hien_thi_kiem_tra_han(df, ten_cot_ngay):
     df_temp = df[[ten_cot_ngay, 'hoTen', 'soBhxh']].copy()
@@ -188,17 +164,13 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         df_co = df_temp.dropna(subset=[ten_cot_ngay])
         hom_nay = datetime.now()
         sau_30 = hom_nay + timedelta(days=30)
-        
         ds_het = df_co[df_co[ten_cot_ngay] < hom_nay].copy()
         ds_sap = df_co[(df_co[ten_cot_ngay] >= hom_nay) & (df_co[ten_cot_ngay] <= sau_30)].copy()
-        
         if not ds_het.empty: ds_het[ten_cot_ngay] = ds_het[ten_cot_ngay].dt.strftime('%d/%m/%Y')
         if not ds_sap.empty: ds_sap[ten_cot_ngay] = ds_sap[ten_cot_ngay].dt.strftime('%d/%m/%Y')
-
         c1, c2 = st.columns(2)
         c1.metric("🔴 ĐÃ HẾT HẠN", f"{len(ds_het)}")
         c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
-        
         if not ds_het.empty:
             st.subheader("🔴 Danh sách Hết Hạn")
             excel_het = tao_file_excel(ds_het)
@@ -226,6 +198,7 @@ def hien_thi_bieu_do_tuong_tac(df, ten_cot):
         hien_thi_uu_tien(df_loc)
     else: st.info("💡 Mẹo: Nhấp vào cột biểu đồ để xem chi tiết.")
 
+# --- CHATBOT THÔNG MINH (Đã bỏ phần kiểm tra hạn tự động) ---
 def hien_thi_chatbot_thong_minh(df):
     st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
     st.info("💡 Ví dụ: 'Lan 12/5/2012', 'tìm hùng', 'vẽ biểu đồ giới tính'")
@@ -260,22 +233,27 @@ def hien_thi_chatbot_thong_minh(df):
                     df_result = df_result[mask_so]
                     filters.append(f"Mã số: **{num}**")
                     prompt_khong_dau = prompt_khong_dau.replace(num, "")
+                
+                # --- LOGIC TÊN (Đã loại bỏ việc kích hoạt tìm 'hạn') ---
                 tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"]
                 for w in tu_rac: prompt_khong_dau = re.sub(r'\b' + w + r'\b', '', prompt_khong_dau)
-                prompt_khong_dau = re.sub(r'\b(bieu do|thong ke|han|het han)\b', '', prompt_khong_dau)
+                prompt_khong_dau = re.sub(r'\b(bieu do|thong ke)\b', '', prompt_khong_dau) # Bỏ 'han' khỏi danh sách loại trừ để tránh hiểu nhầm
+                
                 ten_can_tim = re.sub(r'\s+', ' ', prompt_khong_dau).strip()
                 if len(ten_can_tim) > 1:
                     df_result = df_result[df_result['hoTen_khongdau'].str.contains(ten_can_tim)]
                     filters.append(f"Tên chứa: **{ten_can_tim}**")
+
+                # --- TỔNG HỢP (Bỏ logic "elif han in...") ---
                 if "bieu do" in xoa_dau_tieng_viet(prompt):
                     cot_ve = 'gioiTinh'
                     if "tinh" in xoa_dau_tieng_viet(prompt): cot_ve = 'maTinh'
                     if "huyen" in xoa_dau_tieng_viet(prompt): cot_ve = 'maHuyen'
                     st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
                     hien_thi_bieu_do_tuong_tac(df, cot_ve)
-                elif "han" in xoa_dau_tieng_viet(prompt):
-                    st.write("⏳ Đang kiểm tra hạn BHYT...")
-                    hien_thi_kiem_tra_han(df, 'hanTheDen')
+                
+                # ĐÃ XÓA LOGIC TỰ ĐỘNG KIỂM TRA HẠN Ở ĐÂY
+                
                 elif filters:
                     st.write(f"🔍 Điều kiện: {' + '.join(filters)}")
                     if not df_result.empty:
@@ -303,8 +281,7 @@ def main():
         df = nap_du_lieu_toi_uu()
         
         if df.empty:
-            st.warning("⚠️ Chưa có dữ liệu. Vui lòng vào mục QUẢN TRỊ để tải file lên.")
-            # Nếu chưa có dữ liệu, vẫn cho vào trang Admin để up file
+            st.warning("⚠️ Chưa có dữ liệu.")
             st.sidebar.button("⚙️ QUẢN TRỊ", on_click=set_state, args=('admin',))
             if st.session_state.get('admin'): hien_thi_quan_tri()
             return
@@ -324,8 +301,6 @@ def main():
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         st.sidebar.markdown("---")
         st.sidebar.button("🤖 TRỢ LÝ ẢO", on_click=set_state, args=('ai',))
-        
-        # NÚT QUẢN TRỊ MỚI
         st.sidebar.markdown("---")
         st.sidebar.button("⚙️ QUẢN TRỊ", on_click=set_state, args=('admin',))
 
@@ -337,7 +312,7 @@ def main():
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do_tuong_tac(df, ten_cot)
         elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df)
-        elif st.session_state.get('admin'): hien_thi_quan_tri() # Vào trang quản trị
+        elif st.session_state.get('admin'): hien_thi_quan_tri()
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
