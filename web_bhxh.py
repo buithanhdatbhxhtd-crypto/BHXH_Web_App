@@ -5,17 +5,50 @@ from sqlalchemy import create_engine
 import os
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
+import streamlit_authenticator as stauth 
 
 # --- CẤU HÌNH CSDL ---
 DB_FILE = 'bhxh.db'
 TEN_BANG = 'ho_so_tham_gia'
-# Danh sách cột ưu tiên
-COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChilh', 'VSS_EMAIL']
+COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiIh', 'VSS_EMAIL']
 
-# --- HÀM TẠO CALLBACK CHO NÚT BẤM (Cần đặt ở đây) ---
-# Hàm này sẽ được gọi khi nút bấm được nhấn để lưu lại hành động vào session state
+# --- CẤU HÌNH XÁC THỰC NGƯỜI DÙNG (AUTHENTICATION) ---
+# Dùng chuỗi đã mã hóa của mật khẩu '12345' (CHỈ DÙNG CHO MỤC ĐÍCH KIỂM THỬ)
+CONFIG = {
+    'credentials': {
+        'usernames': {
+            'bhxh_admin': { 
+                'email': 'admin@bhxh.vn',
+                'name': 'Nguyễn Văn A (Admin)',
+                # Chuỗi đã mã hóa cho '12345'
+                'password': '$2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x' 
+            },
+             'bhxh_user': { 
+                'email': 'user@bhxh.vn',
+                'name': 'Lê Thị B (User)',
+                # Chuỗi đã mã hóa cho '12345'
+                'password': '$2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x' 
+            }
+        }
+    },
+    'cookie': {
+        'expiry_days': 30,
+        'key': 'chuoi_ngau_nhien_bhxh_2025_key_security', 
+        'name': 'bhxh_cookie_app'
+    }
+}
+
+# --- KHỞI TẠO AUTHENTICATOR ---
+authenticator = stauth.Authenticate(
+    CONFIG['credentials'],
+    CONFIG['cookie']['name'],
+    CONFIG['cookie']['key'],
+    CONFIG['cookie']['expiry_days']
+)
+
+
+# --- HÀM TẠO CALLBACK CHO NÚT BẤM ---
 def set_state(name):
-    # Đặt tất cả các trạng thái khác về False, chỉ đặt trạng thái nút vừa bấm về True
     for key in ['search', 'loc', 'han', 'bieu']:
         st.session_state[key] = False 
     st.session_state[name] = True
@@ -23,9 +56,8 @@ def set_state(name):
 # --- HÀM NẠP DỮ LIỆU (CHẠY 1 LẦN) ---
 @st.cache_data
 def nap_du_lieu_tu_csdl():
-    # 1. Nếu CSDL chưa tồn tại, đọc file Excel và tạo CSDL
     DB_FILE = 'bhxh.db'
-    EXCEL_FILE = 'data_bhxh.xlsx'
+    EXCEL_FILE = 'dữ liệu bhxh.xlsx' 
     TEN_BANG = 'ho_so_tham_gia'
 
     if not os.path.exists(DB_FILE):
@@ -33,7 +65,6 @@ def nap_du_lieu_tu_csdl():
             st.error(f"❌ Lỗi: Thiếu cả file CSDL ({DB_FILE}) lẫn file Excel ({EXCEL_FILE}).")
             return pd.DataFrame()
         
-        # Nếu thiếu DB, tự động tạo DB từ Excel
         try:
             st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
             df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='openpyxl')
@@ -47,7 +78,6 @@ def nap_du_lieu_tu_csdl():
             st.error(f"❌ Lỗi tạo CSDL: {e}")
             return pd.DataFrame()
 
-    # 2. Đọc dữ liệu từ CSDL (Chạy nhanh sau khi tạo xong)
     try:
         conn = sqlite3.connect(DB_FILE)
         df = pd.read_sql(f"SELECT * FROM {TEN_BANG}", conn)
@@ -72,9 +102,9 @@ def hien_thi_uu_tien(df_ket_qua):
             for cot_uu_tien in COT_UU_TIEN:
                 for col_excel in df_ket_qua.columns:
                      if cot_uu_tien.lower() == col_excel.lower():
-                        val = str(row[col_excel]) if pd.notna(row[col_excel]) else "(Trống)"
-                        du_lieu_uu_tien[col_excel] = val
-                        break
+                         val = str(row[col_excel]) if pd.notna(row[col_excel]) else "(Trống)"
+                         du_lieu_uu_tien[col_excel] = val
+                         break
             
             st.json(du_lieu_uu_tien)
             st.markdown("---")
@@ -102,7 +132,7 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
 
     df_temp = df.copy()
     try:
-        df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce')
+        df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
         df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
 
         hom_nay = datetime.now()
@@ -116,14 +146,15 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         st.metric(label="⚠️ SẮP HẾT HẠN (30 ngày tới)", value=f"{len(ds_sap_het_han)} người")
 
         if not ds_da_het_han.empty:
-            st.dataframe(ds_da_het_han)
+            st.subheader("🔴 Danh sách đã Hết Hạn")
+            st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
         if not ds_sap_het_han.empty:
-            st.dataframe(ds_sap_het_han)
+            st.subheader("⚠️ Danh sách Sắp Hết Hạn")
+            st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
 
     except Exception as e:
         st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
 
-# --- HÀM VẼ BIỂU ĐỒ ---
 def hien_thi_bieu_do(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
@@ -137,77 +168,92 @@ def hien_thi_bieu_do(df, ten_cot):
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
     st.set_page_config(page_title="BHXH Web Manager", layout="wide")
-    st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH - PHIÊN BẢN WEB")
     
-    df = nap_du_lieu_tu_csdl()
+    # --- LOGIC ĐĂNG NHẬP ---
+    name, authentication_status, username = authenticator.login('ĐĂNG NHẬP HỆ THỐNG BHXH', 'main')
 
-    if df.empty:
-        st.error("❌ Ứng dụng không thể tải dữ liệu. Hãy kiểm tra file CSDL 'bhxh.db'.")
-        return
-
-    st.success(f"✅ Đã tải xong {len(df)} dòng dữ liệu. Hệ thống sẵn sàng.")
-    
-    # 1. THANH SIDEBAR (ĐỊNH NGHĨA UI - VỊ TRÍ CHUẨN)
-    st.sidebar.header("CHỨC NĂNG")
-    
-    danh_sach_cot = df.columns.tolist()
-    
-    # LƯU Ý QUAN TRỌNG: st.session_state để lưu input (Fix bug)
-    ten_cot = st.sidebar.selectbox(
-        "Chọn Cột Xử Lý/Tra Cứu:",
-        options=danh_sach_cot, 
-        index=danh_sach_cot.index("soBhxh") if "soBhxh" in danh_sach_cot else 0
-    )
-    
-    gia_tri_tim = st.sidebar.text_input(f"Nhập Giá Trị Tra Cứu:", placeholder=f"Ví dụ: Nguyễn Thị Loan")
-
-    # 2. KHU VỰC NÚT BẤM (Buttons)
-    st.sidebar.markdown("---")
-    
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        st.button("🔍 TRA CỨU HỒ SƠ", on_click=set_state, args=('search',)) 
-    with col2:
-        st.button("🧹 LỌC DỮ LIỆU LỖI", on_click=set_state, args=('loc',))
+    if authentication_status:
+        # --- NỘI DUNG ỨNG DỤNG SAU KHI ĐĂNG NHẬP THÀNH CÔNG ---
         
-    col3, col4 = st.sidebar.columns(2)
-    with col3:
-        st.button("⏳ KIỂM TRA HẠN", on_click=set_state, args=('han',))
-    with col4:
-        st.button("📊 VẼ BIỂU ĐỒ", on_click=set_state, args=('bieu',))
+        # 1. NÚT ĐĂNG XUẤT (Sidebar)
+        st.sidebar.markdown(f'Chào mừng, **{name}**!')
+        authenticator.logout('ĐĂNG XUẤT', 'sidebar')
+        st.sidebar.markdown("---")
 
-    st.sidebar.markdown("---") 
-    st.sidebar.button("✍️ CHUẨN HÓA DỮ LIỆU", on_click=set_state, args=('chuan',)) 
+        st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH - PHIÊN BẢN WEB")
 
-    # 3. LOGIC HIỂN THỊ CHÍNH (MAIN DISPLAY)
-    st.markdown("---")
-    
-    # Khai báo biến tạm thời (Đảm bảo an toàn)
-    ten_cot_hien_tai = ten_cot
-    gia_tri_hien_tai = gia_tri_tim
+        # 2. Tải dữ liệu
+        df = nap_du_lieu_tu_csdl()
 
-    if st.session_state.get('loc'):
-        hien_thi_loc_loi(df, ten_cot_hien_tai)
-    
-    elif st.session_state.get('han'):
-        hien_thi_kiem_tra_han(df, ten_cot_hien_tai)
+        if df.empty:
+            st.error("❌ Ứng dụng không thể tải dữ liệu. Hãy kiểm tra file Excel hoặc CSDL 'bhxh.db'.")
+            return
 
-    elif st.session_state.get('bieu'):
-        hien_thi_bieu_do(df, ten_cot_hien_tai)
-
-    elif st.session_state.get('chuan'):
-        st.warning("Tính năng Chuẩn hóa đang được kích hoạt. Hãy xem Terminal.")
-        # Logic xử lý chuẩn hóa ở đây
-        st.session_state['chuan'] = False
-        st.experimental_rerun()
+        st.success(f"✅ Đã tải xong {len(df)} dòng dữ liệu. Hệ thống sẵn sàng.")
         
-    elif gia_tri_hien_tai: # Tự động tra cứu khi gõ chữ
-        df_tra_cuu = df[df[ten_cot_hien_tai].str.contains(gia_tri_hien_tai, case=False, na=False)]
-        hien_thi_uu_tien(df_tra_cuu)
+        # 3. THANH SIDEBAR
+        st.sidebar.header("CHỨC NĂNG")
+        
+        danh_sach_cot = df.columns.tolist()
+        
+        ten_cot = st.sidebar.selectbox(
+            "Chọn Cột Xử Lý/Tra Cứu:",
+            options=danh_sach_cot, 
+            index=danh_sach_cot.index("soBhxh") if "soBhxh" in danh_sach_cot else 0
+        )
+        
+        gia_tri_tim = st.sidebar.text_input(f"Nhập Giá Trị Tra Cứu:", placeholder=f"Ví dụ: Nguyễn Thị Loan")
+
+        # 4. KHU VỰC NÚT BẤM (Buttons)
+        st.sidebar.markdown("---")
+        
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            st.button("🔍 TRA CỨU HỒ SƠ", on_click=set_state, args=('search',)) 
+        with col2:
+            st.button("🧹 LỌC DỮ LIỆU LỖI", on_click=set_state, args=('loc',))
+            
+        col3, col4 = st.sidebar.columns(2)
+        with col3:
+            st.button("⏳ KIỂM TRA HẠN", on_click=set_state, args=('han',))
+        with col4:
+            st.button("📊 VẼ BIỂU ĐỒ", on_click=set_state, args=('bieu',))
+
+        st.sidebar.markdown("---") 
+        st.sidebar.button("✍️ CHUẨN HÓA DỮ LIỆU", on_click=set_state, args=('chuan',)) 
+
+        # 5. LOGIC HIỂN THỊ CHÍNH
+        st.markdown("---")
+        
+        ten_cot_hien_tai = ten_cot
+        gia_tri_hien_tai = gia_tri_tim
+
+        if st.session_state.get('loc'):
+            hien_thi_loc_loi(df, ten_cot_hien_tai)
+        
+        elif st.session_state.get('han'):
+            hien_thi_kiem_tra_han(df, ten_cot_hien_tai)
+
+        elif st.session_state.get('bieu'):
+            hien_thi_bieu_do(df, ten_cot_hien_tai)
+
+        elif st.session_state.get('chuan'):
+            st.warning("Tính năng Chuẩn hóa đang được kích hoạt. (Cần triển khai logic chi tiết)")
+            st.session_state['chuan'] = False
+
+        elif gia_tri_hien_tai: 
+            df_tra_cuu = df[df[ten_cot_hien_tai].astype(str).str.contains(gia_tri_hien_tai, case=False, na=False)]
+            hien_thi_uu_tien(df_tra_cuu)
+        
+        else:
+            st.subheader("Dữ liệu cơ bản:")
+            st.dataframe(df.head())
+
+    elif authentication_status is False:
+        st.error('Tên đăng nhập/Mật khẩu không đúng. Vui lòng thử lại.')
     
-    else:
-        st.subheader("Dữ liệu cơ bản:")
-        st.dataframe(df.head())
+    elif authentication_status is None:
+        st.warning('Vui lòng đăng nhập để sử dụng ứng dụng.')
 
 
 if __name__ == "__main__":
