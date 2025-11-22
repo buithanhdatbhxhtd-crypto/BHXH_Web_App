@@ -121,10 +121,10 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (DIRECT API) - FIX LỖI 100% ---
+# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (DÙNG MODEL GEMINI-PRO ỔN ĐỊNH) ---
 def call_gemini_direct(api_key, prompt):
-    # URL gọi trực tiếp mô hình Flash siêu nhanh
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # SỬ DỤNG MODEL GEMINI-PRO (Bản ổn định nhất)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     data = {
         "contents": [{
@@ -144,7 +144,7 @@ def hien_thi_tro_ly_ai_lite(df):
     st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Ổn định)")
     st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
 
-    # API Key của bạn
+    # API Key CỦA BẠN
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
 
     if "messages" not in st.session_state:
