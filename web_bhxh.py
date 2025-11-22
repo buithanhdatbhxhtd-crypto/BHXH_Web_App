@@ -20,14 +20,12 @@ st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar
 # --- CẤU HÌNH FILE ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
-USER_DB_FILE = 'users.json' # File lưu danh sách tài khoản
+USER_DB_FILE = 'users.json' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
 
-# --- HÀM QUẢN LÝ USER (MỚI) ---
+# --- HÀM QUẢN LÝ USER ---
 def load_users():
-    """Đọc danh sách user từ file JSON. Nếu chưa có thì tạo Admin mặc định."""
     if not os.path.exists(USER_DB_FILE):
-        # Tạo Admin mặc định: bhxh_admin / 12345
         hashed_pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
         default_data = {
             'usernames': {
@@ -35,77 +33,92 @@ def load_users():
                     'name': 'Admin Tổng',
                     'email': 'admin@bhxh.vn',
                     'password': hashed_pw,
-                    'role': 'admin' # Quyền cao nhất
+                    'role': 'admin'
                 }
             }
         }
-        with open(USER_DB_FILE, 'w') as f:
-            json.dump(default_data, f)
+        with open(USER_DB_FILE, 'w') as f: json.dump(default_data, f)
         return default_data
-    
     try:
-        with open(USER_DB_FILE, 'r') as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(USER_DB_FILE, 'r') as f: return json.load(f)
+    except Exception: return {}
 
 def save_users(config):
-    """Lưu danh sách user mới vào file JSON"""
-    with open(USER_DB_FILE, 'w') as f:
-        json.dump(config, f)
+    with open(USER_DB_FILE, 'w') as f: json.dump(config, f)
 
-# --- GIAO DIỆN QUẢN LÝ USER (CHỈ ADMIN THẤY) ---
+# --- GIAO DIỆN QUẢN LÝ USER (ĐÃ THÊM CHỨC NĂNG XÓA) ---
 def hien_thi_quan_ly_user(config):
     st.markdown("### 👥 QUẢN LÝ NGƯỜI DÙNG")
-    st.info("💡 Tại đây bạn có thể thêm tài khoản cho nhân viên mới.")
+    
+    tab1, tab2 = st.tabs(["➕ Thêm User", "❌ Xóa User"])
 
-    # 1. Form thêm người dùng
-    with st.form("add_user_form"):
-        st.subheader("Thêm tài khoản mới")
-        c1, c2 = st.columns(2)
-        new_username = c1.text_input("Tên đăng nhập (Viết liền, không dấu)", placeholder="vd: nhanvien1")
-        new_name = c2.text_input("Tên hiển thị", placeholder="vd: Nguyễn Văn A")
-        new_password = c1.text_input("Mật khẩu", type="password")
-        new_role = c2.selectbox("Phân quyền", ["user", "admin"], index=0, help="'user' chỉ được xem, 'admin' được quản lý hệ thống")
-        
-        submitted = st.form_submit_button("Lưu tài khoản")
-        
-        if submitted:
-            if new_username and new_password and new_name:
-                if new_username in config['usernames']:
-                    st.error("❌ Tên đăng nhập này đã tồn tại!")
+    # TAB 1: THÊM USER
+    with tab1:
+        st.info("💡 Tạo tài khoản mới cho nhân viên.")
+        with st.form("add_user_form"):
+            c1, c2 = st.columns(2)
+            new_username = c1.text_input("Tên đăng nhập (Viết liền)", placeholder="vd: nhanvien1")
+            new_name = c2.text_input("Tên hiển thị", placeholder="vd: Nguyễn Văn A")
+            new_password = c1.text_input("Mật khẩu", type="password")
+            new_role = c2.selectbox("Phân quyền", ["user", "admin"], index=0)
+            
+            if st.form_submit_button("Lưu tài khoản"):
+                if new_username and new_password and new_name:
+                    if new_username in config['usernames']:
+                        st.error("❌ Tên đăng nhập này đã tồn tại!")
+                    else:
+                        hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
+                        config['usernames'][new_username] = {
+                            'name': new_name,
+                            'password': hashed_pw,
+                            'role': new_role,
+                            'email': ''
+                        }
+                        save_users(config)
+                        st.success(f"✅ Đã tạo user: {new_username}")
+                        st.rerun()
                 else:
-                    # Mã hóa mật khẩu
-                    hashed_pw = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt()).decode()
-                    
-                    # Thêm vào data
-                    config['usernames'][new_username] = {
-                        'name': new_name,
-                        'password': hashed_pw,
-                        'role': new_role,
-                        'email': ''
-                    }
-                    save_users(config) # Lưu xuống file
-                    st.success(f"✅ Đã tạo thành công user: {new_username} ({new_role})")
-            else:
-                st.warning("⚠️ Vui lòng điền đầy đủ thông tin.")
+                    st.warning("⚠️ Vui lòng điền đủ thông tin.")
 
-    # 2. Danh sách người dùng hiện có
+    # TAB 2: XÓA USER (MỚI)
+    with tab2:
+        st.warning("⚠️ Hành động xóa không thể hoàn tác. User bị xóa sẽ không thể đăng nhập.")
+        
+        # Lấy danh sách user trừ chính mình ra (Admin không được tự xóa mình)
+        current_user = st.session_state["username"]
+        list_users_to_delete = [u for u in config['usernames'].keys() if u != current_user]
+        
+        if list_users_to_delete:
+            col_del_1, col_del_2 = st.columns([3, 1])
+            with col_del_1:
+                user_to_delete = st.selectbox("Chọn tài khoản cần xóa:", list_users_to_delete)
+            with col_del_2:
+                st.write("") # Spacer
+                st.write("")
+                if st.button("🗑️ Xác nhận xóa", type="primary"):
+                    try:
+                        del config['usernames'][user_to_delete]
+                        save_users(config)
+                        st.success(f"✅ Đã xóa tài khoản: {user_to_delete}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Lỗi: {e}")
+        else:
+            st.info("Hiện tại không có tài khoản nào khác để xóa.")
+
+    # HIỂN THỊ DANH SÁCH
     st.divider()
     st.subheader("Danh sách tài khoản hiện có")
-    
-    # Chuyển dict sang list để hiển thị bảng
     user_list = []
     for u, data in config['usernames'].items():
         user_list.append({
             "Tên đăng nhập": u,
             "Tên hiển thị": data['name'],
-            "Quyền": data.get('role', 'user')
+            "Quyền hạn": data.get('role', 'user')
         })
     st.dataframe(pd.DataFrame(user_list), use_container_width=True)
 
-
-# --- HÀM HỖ TRỢ CHUNG ---
+# --- HÀM HỖ TRỢ: XÓA DẤU TIẾNG VIỆT ---
 def xoa_dau_tieng_viet(text):
     if not isinstance(text, str): return str(text)
     text = unicodedata.normalize('NFD', text)
@@ -114,12 +127,13 @@ def xoa_dau_tieng_viet(text):
     text = re.sub(r'\s+', ' ', text)
     return text
 
+# --- HÀM TẠO CALLBACK ---
 def set_state(name):
     for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai', 'admin_data', 'admin_user']:
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM XỬ LÝ FILE WORD/EXCEL (GIỮ NGUYÊN) ---
+# --- HÀM TẠO FILE ---
 def tao_phieu_word(row):
     doc = Document()
     heading = doc.add_heading('PHIẾU THÔNG TIN BHXH', 0)
@@ -160,7 +174,7 @@ def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
         try:
             df = pd.read_parquet(PARQUET_FILE)
-            cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai', 'ngaySinh', 'hanTheDen']
+            cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai']
             for col in cols_to_str:
                 if col in df.columns: df[col] = df[col].astype(str)
             return df
@@ -179,7 +193,7 @@ def nap_du_lieu_toi_uu():
         st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- GIAO DIỆN QUẢN TRỊ DATA (CHỈ ADMIN THẤY) ---
+# --- GIAO DIỆN QUẢN TRỊ DATA ---
 def hien_thi_quan_tri_data():
     st.markdown("### ⚙️ CẬP NHẬT DỮ LIỆU HỆ THỐNG")
     uploaded_file = st.file_uploader("📂 Chọn file Excel dữ liệu (.xlsb)", type=['xlsb'])
@@ -195,14 +209,14 @@ def hien_thi_quan_tri_data():
                 st.balloons()
             except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
 
-# --- CÁC HÀM HIỂN THỊ (GIỮ NGUYÊN) ---
+# --- CÁC HÀM HIỂN THỊ ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
-        st.warning("😞 Không tìm thấy kết quả.")
+        st.warning("😞 Không tìm thấy kết quả phù hợp.")
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     excel_data = tao_file_excel(df_ket_qua)
-    st.download_button(label="📥 Tải Excel", data=excel_data.getvalue(), file_name=f"danh_sach.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button(label="📥 Tải danh sách (Excel)", data=excel_data.getvalue(), file_name=f"danh_sach.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     if len(df_ket_qua) > 50: st.caption(f"⚠️ Đang hiển thị 50/{len(df_ket_qua)} kết quả đầu tiên.")
     for i in range(min(len(df_ket_qua), 50)):
         row = df_ket_qua.iloc[i]
@@ -324,7 +338,7 @@ def hien_thi_chatbot_thong_minh(df):
                     if "huyen" in xoa_dau_tieng_viet(prompt): cot_ve = 'maHuyen'
                     st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
                     hien_thi_bieu_do_tuong_tac(df, cot_ve)
-                elif "han" in xoa_dau_tieng_viet(prompt):
+                elif "han" in xoa_dau_tieng_viet(prompt) and "het" in xoa_dau_tieng_viet(prompt):
                     st.write("⏳ Đang kiểm tra hạn BHYT...")
                     hien_thi_kiem_tra_han(df, 'hanTheDen')
                 elif filters:
@@ -338,12 +352,12 @@ def hien_thi_chatbot_thong_minh(df):
 
 # --- MAIN ---
 def main():
-    # 1. Load User từ file JSON
+    # 1. Load User
     user_config = load_users()
     
     # 2. Khởi tạo Authenticator
     authenticator = stauth.Authenticate(
-        user_config, # Load từ config động
+        user_config, 
         'bhxh_cookie', 
         'key_bi_mat_rat_dai_va_kho_doan_123', 
         30
@@ -351,18 +365,14 @@ def main():
     authenticator.login(location='main')
 
     if st.session_state["authentication_status"]:
-        # Lấy thông tin user hiện tại
         username = st.session_state["username"]
-        user_role = user_config['usernames'][username].get('role', 'user') # Mặc định là user nếu ko có role
+        user_role = user_config['usernames'][username].get('role', 'user')
         user_name_display = user_config['usernames'][username]['name']
 
         with st.sidebar:
             st.write(f'Xin chào, **{user_name_display}**! 👋')
-            if user_role == 'admin':
-                st.caption("👑 Quản trị viên")
-            else:
-                st.caption("👤 Người dùng")
-                
+            if user_role == 'admin': st.caption("👑 Quản trị viên")
+            else: st.caption("👤 Người dùng")
             authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
@@ -371,7 +381,7 @@ def main():
         
         if df.empty:
             st.warning("⚠️ Chưa có dữ liệu.")
-            if user_role == 'admin': # Chỉ admin mới thấy nút này khi chưa có data
+            if user_role == 'admin':
                 st.sidebar.button("⚙️ CẬP NHẬT DATA", on_click=set_state, args=('admin_data',))
                 if st.session_state.get('admin_data'): hien_thi_quan_tri_data()
             return
@@ -407,10 +417,8 @@ def main():
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do_tuong_tac(df, ten_cot)
         elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df)
-        # Chỉ admin mới vào được 2 hàm này
         elif st.session_state.get('admin_data') and user_role == 'admin': hien_thi_quan_tri_data()
         elif st.session_state.get('admin_user') and user_role == 'admin': hien_thi_quan_ly_user(user_config)
-        
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
