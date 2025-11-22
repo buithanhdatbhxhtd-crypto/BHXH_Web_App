@@ -143,7 +143,8 @@ def main():
     )
 
     # 3. Hiển thị Form Đăng nhập
-    name, authentication_status, username = authenticator.login('main')
+    # Thêm chữ 'Đăng nhập' vào tham số đầu tiên
+name, authentication_status, username = authenticator.login('Đăng nhập', 'main')
 
     # 4. Xử lý sau đăng nhập
     if authentication_status:
