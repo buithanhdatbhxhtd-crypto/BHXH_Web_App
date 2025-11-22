@@ -6,5 +6,6 @@ matplotlib
 streamlit-authenticator
 pyxlsb
 plotly
+pandasai
 
 
