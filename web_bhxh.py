@@ -9,6 +9,8 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
+from pandasai import SmartDataframe
+from pandasai.llm import GoogleGemini
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
@@ -20,27 +22,23 @@ COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoa
 
 # --- HÀM TẠO CALLBACK ---
 def set_state(name):
-    for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
+    # Reset các trạng thái khác
+    for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai']:
         st.session_state[key] = False
     st.session_state[name] = True
 
 # --- HÀM NẠP DỮ LIỆU ---
 @st.cache_data
 def nap_du_lieu_tu_csdl():
-    # TÊN FILE MỚI: Đuôi .xlsb
-    EXCEL_FILE = 'aaa.xlsb' 
+    EXCEL_FILE = 'data.xlsb'
     
     if not os.path.exists(DB_FILE):
         if not os.path.exists(EXCEL_FILE):
             st.error(f"❌ Lỗi: Thiếu cả file CSDL ({DB_FILE}) lẫn file Excel ({EXCEL_FILE}).")
-            st.info("Vui lòng kiểm tra xem bạn đã upload file 'dữ liệu bhxh.xlsb' lên GitHub chưa.")
             return pd.DataFrame()
         
         try:
-            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel (.xlsb). Vui lòng đợi...")
-            
-            # --- THAY ĐỔI QUAN TRỌNG Ở ĐÂY ---
-            # Dùng engine='pyxlsb' để đọc file binary excel
+            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
             df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='pyxlsb')
             df_init.columns = df_init.columns.str.strip()
             
@@ -61,47 +59,28 @@ def nap_du_lieu_tu_csdl():
     except Exception:
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ (GIỮ NGUYÊN) ---
+# --- CÁC HÀM HIỂN THỊ CŨ (GIỮ NGUYÊN) ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
         return
-    
     st.success(f"✅ Đã tìm thấy {len(df_ket_qua)} hồ sơ!")
-    
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
-        
-        # Tiêu đề của Expander (Khung mở rộng)
         tieu_de = f"👤 HỒ SƠ SỐ {i+1}: {row.get('hoTen', 'Không tên')} - Mã: {row.get('soBhxh', '---')}"
-        
-        with st.expander(tieu_de, expanded=True): # expanded=True để mặc định mở ra luôn
-            
-            # --- PHẦN GIAO DIỆN MỚI: Chia 2 cột ---
+        with st.expander(tieu_de, expanded=True):
             c1, c2 = st.columns(2)
-            
-            # Duyệt qua danh sách cột ưu tiên để hiển thị
             for idx, cot_uu_tien in enumerate(COT_UU_TIEN):
                 gia_tri = "(Trống)"
-                
-                # Tìm giá trị khớp trong data (không phân biệt hoa thường)
                 for col_excel in df_ket_qua.columns:
                      if cot_uu_tien.lower() == col_excel.lower():
                          val = row[col_excel]
-                         if pd.notna(val) and str(val).strip() != "":
+                         if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
                              gia_tri = str(val)
                          break
-                
-                # Định dạng hiển thị đẹp hơn dùng Markdown
-                # Cột chẵn bên trái, cột lẻ bên phải
-                noi_dung = f"**🔹 {cot_uu_tien}:** \n{gia_tri}"
-                
-                if idx % 2 == 0:
-                    c1.markdown(noi_dung)
-                else:
-                    c2.markdown(noi_dung)
-            
-            # ---------------------------------------
+                noi_dung = f"**🔹 {cot_uu_tien}:** {gia_tri}"
+                if idx % 2 == 0: c1.markdown(noi_dung)
+                else: c2.markdown(noi_dung)
             st.markdown("---")
             st.caption("Dữ liệu gốc:")
             st.dataframe(row.to_frame().T, hide_index=True)
@@ -110,19 +89,9 @@ def hien_thi_loc_loi(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
         return
-    
-    # Chuẩn hóa dữ liệu để kiểm tra: 
-    # 1. Chuyển hết về dạng Chuỗi (text)
-    # 2. Xóa khoảng trắng thừa ở đầu/cuối (strip)
-    # 3. Chuyển về chữ thường (lower) để 'NaN' cũng giống 'nan'
     col_chuan_hoa = df[ten_cot].astype(str).str.strip().str.lower()
-    
-    # Định nghĩa các giá trị được coi là "Rỗng/Lỗi"
-    gia_tri_rong = ['nan', 'none', 'null', '', '0'] # Thêm '0' nếu bạn coi số 0 là thiếu SĐT
-    
-    # Lọc dữ liệu
+    gia_tri_rong = ['nan', 'none', 'null', '', '0']
     df_loc = df[col_chuan_hoa.isin(gia_tri_rong)]
-
     if not df_loc.empty:
         st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu ở cột '{ten_cot}'.")
         st.dataframe(df_loc)
@@ -133,43 +102,30 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
     if ten_cot_ngay not in df.columns:
         st.error(f"❌ Không tìm thấy cột Ngày Hết Hạn: '{ten_cot_ngay}'.")
         return
-    
-    # Tạo bản sao để không ảnh hưởng dữ liệu gốc
     df_temp = df.copy()
-    
     try:
-        # 1. Chuyển đổi sang dạng ngày tháng để tính toán
         df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
         df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
-        
         hom_nay = datetime.now()
         sau_30_ngay = hom_nay + timedelta(days=30)
-        
-        # 2. Lọc danh sách
         ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay].copy()
         ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)].copy()
         
-        # 3. --- LÀM ĐẸP: Format lại thành dd/mm/yyyy ---
         if not ds_da_het_han.empty:
             ds_da_het_han[ten_cot_ngay] = ds_da_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
-            
         if not ds_sap_het_han.empty:
             ds_sap_het_han[ten_cot_ngay] = ds_sap_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
-        # -----------------------------------------------
 
         st.markdown("### ⏳ KẾT QUẢ KIỂM TRA HẠN")
         col1, col2 = st.columns(2)
         col1.metric(label="🔴 ĐÃ HẾT HẠN", value=f"{len(ds_da_het_han)} người")
         col2.metric(label="⚠️ SẮP HẾT HẠN (30 ngày)", value=f"{len(ds_sap_het_han)} người")
-        
         if not ds_da_het_han.empty:
             st.subheader("🔴 Danh sách đã Hết Hạn")
             st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
-            
         if not ds_sap_het_han.empty:
             st.subheader("⚠️ Danh sách Sắp Hết Hạn")
             st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
-            
     except Exception as e:
         st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
 
@@ -177,37 +133,59 @@ def hien_thi_bieu_do(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
         return
-    
     st.markdown(f"### 📊 BIỂU ĐỒ THỐNG KÊ: {ten_cot}")
-    
-    # 1. Chuẩn bị dữ liệu thống kê
-    # reset_index() giúp biến kết quả thành bảng có cột rõ ràng để vẽ
     thong_ke = df[ten_cot].value_counts().reset_index()
     thong_ke.columns = ['Phân loại', 'Số lượng'] 
-    
-    # 2. Vẽ biểu đồ bằng Plotly
-    fig = px.bar(
-        thong_ke, 
-        x='Phân loại', 
-        y='Số lượng',
-        text='Số lượng',  # Hiển thị con số ngay trên đầu cột
-        color='Phân loại', # Tự động tô màu sắc khác nhau
-        title=f"Phân bố hồ sơ theo {ten_cot}"
-    )
-    
-    # Tinh chỉnh hiển thị
-    fig.update_traces(textposition='outside') # Đưa số liệu lên trên cột
-    
-    # 3. Xuất biểu đồ ra màn hình
+    fig = px.bar(thong_ke, x='Phân loại', y='Số lượng', text='Số lượng', color='Phân loại', title=f"Phân bố theo {ten_cot}")
+    fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
+
+# --- CHỨC NĂNG MỚI: TRỢ LÝ ẢO AI ---
+def hien_thi_tro_ly_ai(df):
+    st.markdown("### 🤖 TRỢ LÝ ẢO AI (Chat với Dữ liệu)")
+    st.info("💡 Bạn có thể hỏi: 'Có bao nhiêu người tên Lan?', 'Vẽ biểu đồ giới tính', hoặc 'Ai sắp hết hạn thẻ?'")
     
-    # Hiển thị bảng số liệu chi tiết bên dưới (tùy chọn)
-    with st.expander("Xem số liệu chi tiết"):
-        st.dataframe(thong_ke, hide_index=True)
+    # 1. Cấu hình API Key (DÁN KEY CỦA BẠN VÀO DÒNG DƯỚI)
+    api_key = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" 
+    
+    if api_key == "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550":
+        st.warning("⚠️ Vui lòng nhập Google API Key vào code web_bhxh.py để sử dụng tính năng này.")
+        return
+
+    # 2. Khởi tạo AI
+    llm = GoogleGemini(api_key=api_key)
+    sdf = SmartDataframe(df, config={"llm": llm})
+
+    # 3. Giao diện Chat
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Hiển thị lịch sử chat
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Ô nhập liệu
+    if prompt := st.chat_input("Nhập câu hỏi của bạn về dữ liệu BHXH..."):
+        # Hiển thị câu hỏi của người dùng
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # AI suy nghĩ và trả lời
+        with st.chat_message("assistant"):
+            with st.spinner("AI đang phân tích dữ liệu..."):
+                try:
+                    response = sdf.chat(prompt)
+                    st.write(response) # Dùng st.write để hiển thị cả văn bản lẫn biểu đồ nếu có
+                    st.session_state.messages.append({"role": "assistant", "content": str(response)})
+                except Exception as e:
+                    st.error(f"AI gặp lỗi: {e}")
+
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
-    # 1. CẤU HÌNH TÀI KHOẢN (Dùng bcrypt trực tiếp)
+    # 1. ĐĂNG NHẬP
     mat_khau_raw = "12345"
     hashed_pw = bcrypt.hashpw(mat_khau_raw.encode(), bcrypt.gensalt()).decode()
     
@@ -220,41 +198,22 @@ def main():
             }
         }
     }
-
-    cookie = {
-        'name': 'bhxh_cookie',
-        'key': 'mot_chuoi_ky_tu_ngau_nhien_rat_dai_va_bao_mat_khong_trung_lap',
-        'expiry_days': 30
-    }
-
-    # 2. Khởi tạo Authenticator
-    authenticator = stauth.Authenticate(
-        credentials,
-        cookie['name'],
-        cookie['key'],
-        cookie['expiry_days']
-    )
-
-    # 3. Hiển thị Form Đăng nhập
+    cookie = {'name': 'bhxh_cookie', 'key': 'key_bao_mat_rat_dai', 'expiry_days': 30}
+    authenticator = stauth.Authenticate(credentials, cookie['name'], cookie['key'], cookie['expiry_days'])
     authenticator.login(location='main')
 
-    # 4. Kiểm tra trạng thái
     if st.session_state["authentication_status"]:
-        
-        # --- GIAO DIỆN CHÍNH ---
         with st.sidebar:
             st.write(f'Xin chào, **{st.session_state["name"]}**! 👋')
             authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
         st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH")
-
         df = nap_du_lieu_tu_csdl()
+        
         if df.empty:
             st.info("Đang chờ dữ liệu...")
             return 
-
-        st.success(f"✅ Hệ thống sẵn sàng: {len(df)} hồ sơ.")
 
         # Sidebar chức năng
         st.sidebar.header("CHỨC NĂNG")
@@ -272,14 +231,13 @@ def main():
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         
         st.sidebar.markdown("---")
-        st.sidebar.button("✍️ CHUẨN HÓA", on_click=set_state, args=('chuan',))
+        # Nút Trợ lý AI mới
+        st.sidebar.button("🤖 TRỢ LÝ AI", on_click=set_state, args=('ai',))
 
         # Logic hiển thị
         st.markdown("---")
-        
-        for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
-            if key not in st.session_state:
-                st.session_state[key] = False
+        for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai']:
+            if key not in st.session_state: st.session_state[key] = False
 
         if st.session_state.get('loc'):
             hien_thi_loc_loi(df, ten_cot)
@@ -287,14 +245,13 @@ def main():
             hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'):
             hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('chuan'):
-            st.warning("Tính năng đang phát triển.")
-            st.session_state['chuan'] = False
+        elif st.session_state.get('ai'):
+            hien_thi_tro_ly_ai(df) # Gọi hàm AI mới
         elif gia_tri_tim:
             df_tra_cuu = df[df[ten_cot].astype(str).str.contains(gia_tri_tim, case=False, na=False)]
             hien_thi_uu_tien(df_tra_cuu)
         else:
-            st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa bên trái.")
+            st.info("👈 Vui lòng chọn chức năng bên trái.")
             st.dataframe(df.head())
 
     elif st.session_state["authentication_status"] is False:
