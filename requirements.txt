@@ -5,6 +5,7 @@ pyxlsb
 plotly
 bcrypt
 pyarrow
+google-generativeai
 
 
 
