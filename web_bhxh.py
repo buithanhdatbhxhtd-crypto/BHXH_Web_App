@@ -166,7 +166,7 @@ def hien_thi_tro_ly_ai_lite(df):
                     """
                     
                     genai.configure(api_key=API_KEY)
-                    model = genai.GenerativeModel('gemini-pro')
+                    model = genai.GenerativeModel('gemini-1.5-flash')
                     response = model.generate_content(context)
                     
                     st.write(response.text)
