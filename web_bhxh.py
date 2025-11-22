@@ -329,9 +329,10 @@ def hien_thi_chatbot_thong_minh(df):
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
     if prompt := st.chat_input("Nhập yêu cầu..."):
-        st.session_state.messages.append({"role": "user", "content": prompt}); log_action(st.session_state["username"], "Chat AI", prompt);
-        
-        with st.chat_message("user"): st.markdown(prompt) # DÒNG NÀY ĐÃ ĐƯỢC NGẮT XUỐNG
+        # FIX CÚ PHÁP TẠI ĐÂY (NGẮT DÒNG)
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        log_action(st.session_state["username"], "Chat AI", prompt)
+        with st.chat_message("user"): st.markdown(prompt) 
         
         with st.chat_message("assistant"):
             df_res = df.copy(); df_res['hoTen_khongdau'] = df_res['hoTen'].apply(lambda x: xoa_dau_tieng_viet(str(x))); filters = [] 
@@ -345,7 +346,6 @@ def hien_thi_chatbot_thong_minh(df):
                 nums = re.findall(r'\b\d{5,}\b', prompt);
                 for n in nums:
                     if date_m and n in date_m.group(): continue; mask_so = (df_res['soBhxh'].astype(str).str.contains(n)) | (df_res['soCmnd'].astype(str).str.contains(n)); df_res = df_res[mask_so]; filters.append(f"Mã: {n}")
-                    prompt_khong_dau = prompt_khong_dau.replace(n, "")
                 tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"];
                 p_clean = xoa_dau_tieng_viet(prompt); for w in tu_rac: p_clean = re.sub(r'\b' + w + r'\b', '', p_clean);
                 p_clean = re.sub(r'\b(bieu do|thong ke|han|het han)\b', '', p_clean); ten = re.sub(r'\s+', ' ', p_clean).strip();
