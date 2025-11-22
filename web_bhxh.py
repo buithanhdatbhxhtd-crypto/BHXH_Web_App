@@ -5,13 +5,12 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import requests # Thư viện gửi yêu cầu trực tiếp
-import json
+import google.generativeai as genai # Dùng thư viện chính hãng
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH ---
+# --- CẤU HÌNH FILE ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
@@ -121,48 +120,28 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: CƠ CHẾ TỰ ĐỘNG TÌM MODEL (FIX DỨT ĐIỂM) ---
-def call_gemini_smart(api_key, prompt):
-    # Danh sách các model sẽ thử lần lượt
-    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"]
-    
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    
-    # Thử từng model
-    for model_name in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-        try:
-            response = requests.post(url, headers=headers, data=json.dumps(data))
-            
-            # Nếu thành công (200 OK) -> Trả về kết quả ngay
-            if response.status_code == 200:
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            
-            # Nếu lỗi 404 (Không tìm thấy model) -> Bỏ qua, thử model tiếp theo
-            elif response.status_code == 404:
-                continue 
-                
-            # Nếu lỗi khác (ví dụ sai Key) -> Báo lỗi ngay
-            else:
-                return f"Lỗi từ Google ({model_name}): {response.text}"
-                
-        except Exception as e:
-            continue # Lỗi mạng thì thử cái tiếp theo
-
-    return "Xin lỗi, hệ thống đã thử tất cả các phiên bản AI nhưng đều thất bại. Vui lòng kiểm tra lại API Key của bạn."
-
+# --- CHỨC NĂNG AI: DÙNG THƯ VIỆN CHÍNH HÃNG GOOGLE (BẢN FIX CUỐI) ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Thông Minh)")
-    st.info("💡 AI sẽ tự động chọn phiên bản tốt nhất để trả lời bạn.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
+    st.info("💡 AI đang sử dụng phiên bản Flash mới nhất của Google.")
 
-    # API Key CỦA BẠN (Đã điền sẵn)
-    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
+    # 1. Cấu hình API Key
+    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" # Key của bạn
 
+    if not API_KEY:
+        st.warning("⚠️ Chưa có API Key.")
+        return
+
+    # 2. Cấu hình Gemini
+    try:
+        genai.configure(api_key=API_KEY)
+        # Dùng model mới nhất
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Lỗi cấu hình AI: {e}")
+        return
+
+    # 3. Giao diện Chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -177,27 +156,30 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                # Chuẩn bị dữ liệu (Dùng to_string để tránh lỗi tabulate)
-                data_sample = df.head(10).to_string(index=False)
-                columns_info = ", ".join(df.columns.tolist())
-                total_rows = len(df)
-                
-                context = f"""
-                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                - Tổng số dòng: {total_rows}
-                - Các cột: {columns_info}
-                - Dữ liệu mẫu (10 dòng đầu):
-                {data_sample}
-                
-                Câu hỏi người dùng: "{prompt}"
-                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
-                """
-                
-                # Gọi hàm thông minh mới
-                tra_loi = call_gemini_smart(API_KEY, context)
-                
-                st.write(tra_loi)
-                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
+                try:
+                    # Chuẩn bị dữ liệu (Dùng to_string để tránh lỗi tabulate)
+                    data_sample = df.head(10).to_string(index=False)
+                    columns_info = ", ".join(df.columns.tolist())
+                    total_rows = len(df)
+                    
+                    context = f"""
+                    Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                    - Tổng số dòng: {total_rows}
+                    - Các cột: {columns_info}
+                    - Dữ liệu mẫu (10 dòng đầu):
+                    {data_sample}
+                    
+                    Câu hỏi người dùng: "{prompt}"
+                    Hãy trả lời ngắn gọn bằng tiếng Việt.
+                    """
+                    
+                    # Gọi AI qua thư viện chính hãng
+                    response = model.generate_content(context)
+                    
+                    st.write(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                except Exception as e:
+                    st.error(f"Lỗi kết nối: {e}")
 
 # --- MAIN ---
 def main():
