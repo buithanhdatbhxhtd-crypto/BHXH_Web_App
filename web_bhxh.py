@@ -5,7 +5,8 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai
+import requests 
+import json
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -119,27 +120,39 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: NHẬP KEY TRỰC TIẾP ---
-def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Gemini Pro)")
+# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP ĐẾN MODEL FLASH (FIX 100%) ---
+def call_gemini_flash_direct(api_key, prompt):
+    # Sử dụng model 1.5-flash mới nhất và ổn định nhất
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
-    # --- Ô NHẬP KEY TRỰC TIẾP ---
-    api_key_input = st.text_input("🔑 Nhập Google API Key của bạn vào đây:", type="password")
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=15)
+        
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            # In ra lỗi chi tiết từ Google nếu có
+            error_msg = response.json().get('error', {}).get('message', response.text)
+            return f"Lỗi từ Google (Mã {response.status_code}): {error_msg}"
+            
+    except Exception as e:
+        return f"Lỗi kết nối mạng: {str(e)}"
+
+def hien_thi_tro_ly_ai_lite(df):
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
+    
+    # Ô nhập Key
+    api_key_input = st.text_input("🔑 Nhập Google API Key:", type="password")
     
     if not api_key_input:
-        st.info("👈 Vui lòng dán API Key để bắt đầu.")
-        return
-
-    # Cấu hình Gemini
-    try:
-        genai.configure(api_key=api_key_input)
-        
-        # --- THAY ĐỔI QUAN TRỌNG: DÙNG MODEL CŨ NHƯNG ỔN ĐỊNH ---
-        model = genai.GenerativeModel('gemini-pro') 
-        # -------------------------------------------------------
-        
-    except Exception as e:
-        st.error(f"Key không hợp lệ: {e}")
+        st.info("👈 Vui lòng nhập Key để bắt đầu.")
         return
 
     if "messages" not in st.session_state:
@@ -156,25 +169,27 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                try:
-                    data_sample = df.head(10).to_string(index=False)
-                    columns_info = ", ".join(df.columns.tolist())
-                    total_rows = len(df)
-                    
-                    context = f"""
-                    Dữ liệu BHXH (Tổng: {total_rows} dòng). Các cột: {columns_info}.
-                    Mẫu 10 dòng đầu:
-                    {data_sample}
-                    
-                    Câu hỏi: "{prompt}"
-                    Trả lời ngắn gọn tiếng Việt.
-                    """
-                    
-                    response = model.generate_content(context)
-                    st.write(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-                except Exception as e:
-                    st.error(f"Lỗi kết nối: {e}")
+                # Chuẩn bị dữ liệu dạng chuỗi
+                data_sample = df.head(10).to_string(index=False)
+                columns_info = ", ".join(df.columns.tolist())
+                total_rows = len(df)
+                
+                context = f"""
+                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                - Tổng số dòng: {total_rows}
+                - Các cột: {columns_info}
+                - Dữ liệu mẫu (10 dòng đầu):
+                {data_sample}
+                
+                Câu hỏi người dùng: "{prompt}"
+                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
+                """
+                
+                # Gọi hàm trực tiếp
+                tra_loi = call_gemini_flash_direct(api_key_input, context)
+                
+                st.write(tra_loi)
+                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
 
 # --- MAIN ---
 def main():
