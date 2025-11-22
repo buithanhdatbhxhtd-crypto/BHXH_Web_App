@@ -1,250 +1,33 @@
 import streamlit as st
-import pandas as pd
-import sqlite3
-from sqlalchemy import create_engine
-import os
-from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
-import streamlit_authenticator as stauth 
-import yaml # Thư viện cần thiết
-from yaml.loader import SafeLoader # Thư viện cần thiết
+import streamlit_authenticator as stauth
+import yaml
+from yaml.loader import SafeLoader
 
-# --- CẤU HÌNH CSDL ---
-DB_FILE = 'bhxh.db'
-TEN_BANG = 'ho_so_tham_gia'
-COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiIh', 'VSS_EMAIL']
+# --- CẤU HÌNH TRANG ---
+st.set_page_config(page_title="BHXH Web Manager", layout="wide")
 
-# --- CẤU HÌNH XÁC THỰC BẰNG FILE YAML ---
-try:
-    with open('config.yaml') as file:
-        config = yaml.load(file, Loader=SafeLoader)
-except FileNotFoundError:
-    st.error("❌ Lỗi: Không tìm thấy file 'config.yaml'. Vui lòng thêm file này vào repository.")
-    st.stop()
-except Exception as e:
-    st.error(f"❌ Lỗi đọc file YAML: {e}")
-    st.stop()
-
-
-# --- KHỞI TẠO AUTHENTICATOR ---
-authenticator = stauth.Authenticate(
-    config['credentials'],
-    config['cookie']['name'],
-    config['cookie']['key'],
-    config['cookie']['expiry_days']
-)
-
-
-# --- HÀM TẠO CALLBACK CHO NÚT BẤM (GIỮ NGUYÊN) ---
-def set_state(name):
-    for key in ['search', 'loc', 'han', 'bieu']:
-        st.session_state[key] = False 
-    st.session_state[name] = True
-
-# --- HÀM NẠP DỮ LIỆU (CHẠY 1 LẦN) (GIỮ NGUYÊN) ---
-@st.cache_data
-def nap_du_lieu_tu_csdl():
-    DB_FILE = 'bhxh.db'
-    EXCEL_FILE = 'dữ liệu bhxh.xlsx' 
-    TEN_BANG = 'ho_so_tham_gia'
-
-    if not os.path.exists(DB_FILE):
-        if not os.path.exists(EXCEL_FILE):
-            st.error(f"❌ Lỗi: Thiếu cả file CSDL ({DB_FILE}) lẫn file Excel ({EXCEL_FILE}).")
-            return pd.DataFrame()
-        
-        try:
-            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
-            df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='openpyxl')
-            df_init.columns = df_init.columns.str.strip()
-            
-            engine = create_engine(f'sqlite:///{DB_FILE}')
-            df_init.to_sql(TEN_BANG, engine, if_exists='replace', index=False)
-            engine.dispose()
-            st.success("✅ CSDL đã được xây dựng thành công trên máy chủ Streamlit.")
-        except Exception as e:
-            st.error(f"❌ Lỗi tạo CSDL: {e}")
-            return pd.DataFrame()
-
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        df = pd.read_sql(f"SELECT * FROM {TEN_BANG}", conn)
-        conn.close()
-        df.columns = df.columns.str.strip() 
-        return df.astype(str)
-    except Exception:
-        return pd.DataFrame()
-
-# --- CÁC HÀM HIỂN THỊ KHÁC (GIỮ NGUYÊN) ---
-def hien_thi_uu_tien(df_ket_qua):
-    if df_ket_qua.empty:
-        st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
-        return
-        
-    st.success(f"✅ Đã tìm thấy {len(df_ket_qua)} hồ sơ!")
-    
-    for i in range(len(df_ket_qua)):
-        row = df_ket_qua.iloc[i]
-        with st.expander(f"👤 HỒ SƠ SỐ {i+1}: {row.get('hoTen', row.get('soBhxh'))}"):
-            du_lieu_uu_tien = {}
-            for cot_uu_tien in COT_UU_TIEN:
-                for col_excel in df_ket_qua.columns:
-                     if cot_uu_tien.lower() == col_excel.lower():
-                         val = str(row[col_excel]) if pd.notna(row[col_excel]) else "(Trống)"
-                         du_lieu_uu_tien[col_excel] = val
-                         break
-            
-            st.json(du_lieu_uu_tien)
-            st.markdown("---")
-            st.dataframe(row.to_frame().T)
-
-def hien_thi_loc_loi(df, ten_cot):
-    if ten_cot not in df.columns:
-        st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
-        return
-    
-    df_loc = df[df[ten_cot].isna() | (df[ten_cot].str.strip() == "nan") | (df[ten_cot] == "")]
-
-    if not df_loc.empty:
-        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu cột '{ten_cot}'.")
-        st.dataframe(df_loc)
-    else:
-        st.success(f"Tuyệt vời! Cột '{ten_cot}' đầy đủ dữ liệu.")
-
-def hien_thi_kiem_tra_han(df, ten_cot_ngay):
-    if ten_cot_ngay not in df.columns:
-        st.error(f"❌ Không tìm thấy cột Ngày Hết Hạn: '{ten_cot_ngay}'.")
-        return
-
-    df_temp = df.copy()
-    try:
-        df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
-        df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
-
-        hom_nay = datetime.now()
-        sau_30_ngay = hom_nay + timedelta(days=30)
-
-        ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay]
-        ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)]
-
-        st.markdown("### ⏳ KẾT QUẢ KIỂM TRA HẠN")
-        st.metric(label="🔴 ĐÃ HẾT HẠN", value=f"{len(ds_da_het_han)} người")
-        st.metric(label="⚠️ SẮP HẾT HẠN (30 ngày tới)", value=f"{len(ds_sap_het_han)} người")
-
-        if not ds_da_het_han.empty:
-            st.subheader("🔴 Danh sách đã Hết Hạn")
-            st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
-        if not ds_sap_het_han.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết Hạn")
-            st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
-
-    except Exception as e:
-        st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
-
-def hien_thi_bieu_do(df, ten_cot):
-    if ten_cot not in df.columns:
-        st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
-        return
-    
-    st.markdown("### 📊 BIỂU ĐỒ THỐNG KÊ")
-    thong_ke = df[ten_cot].value_counts().head(20)
-    st.bar_chart(thong_ke)
-    st.dataframe(thong_ke)
-
-# --- PHẦN CHÍNH (MAIN) ---
 def main():
-    st.set_page_config(page_title="BHXH Web Manager", layout="wide")
+    # =====================================================
+    # BƯỚC 1: LẤY MÃ HASH (Đoạn code tạm thời)
+    # =====================================================
+    st.header("🛠️ Công cụ tạo mã Hash mật khẩu")
+    st.info("Hãy copy chuỗi ký tự bên dưới và dán vào file config.yaml, sau đó xóa đoạn code này đi.")
     
-    # --- LOGIC ĐĂNG NHẬP ---
-    name, authentication_status, username = authenticator.login('ĐĂNG NHẬP HỆ THỐNG BHXH', 'main')
-
-    if authentication_status:
-        # --- NỘI DUNG ỨNG DỤNG SAU KHI ĐĂNG NHẬP THÀNH CÔNG ---
-        
-        # 1. NÚT ĐĂNG XUẤT (Sidebar)
-        st.sidebar.markdown(f'Chào mừng, **{name}**!')
-        authenticator.logout('ĐĂNG XUẤT', 'sidebar')
-        st.sidebar.markdown("---")
-
-        st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH - PHIÊN BẢN WEB")
-
-        # 2. Tải dữ liệu
-        df = nap_du_lieu_tu_csdl()
-
-        if df.empty:
-            st.error("❌ Ứng dụng không thể tải dữ liệu. Hãy kiểm tra file Excel hoặc CSDL 'bhxh.db'.")
-            return
-
-        st.success(f"✅ Đã tải xong {len(df)} dòng dữ liệu. Hệ thống sẵn sàng.")
-        
-        # 3. THANH SIDEBAR
-        st.sidebar.header("CHỨC NĂNG")
-        
-        danh_sach_cot = df.columns.tolist()
-        
-        ten_cot = st.sidebar.selectbox(
-            "Chọn Cột Xử Lý/Tra Cứu:",
-            options=danh_sach_cot, 
-            index=danh_sach_cot.index("soBhxh") if "soBhxh" in danh_sach_cot else 0
-        )
-        
-        gia_tri_tim = st.sidebar.text_input(f"Nhập Giá Trị Tra Cứu:", placeholder=f"Ví dụ: Nguyễn Thị Loan")
-
-        # 4. KHU VỰC NÚT BẤM (Buttons)
-        st.sidebar.markdown("---")
-        
-        col1, col2 = st.sidebar.columns(2)
-        with col1:
-            st.button("🔍 TRA CỨU HỒ SƠ", on_click=set_state, args=('search',)) 
-        with col2:
-            st.button("🧹 LỌC DỮ LIỆU LỖI", on_click=set_state, args=('loc',))
-            
-        col3, col4 = st.sidebar.columns(2)
-        with col3:
-            st.button("⏳ KIỂM TRA HẠN", on_click=set_state, args=('han',))
-        with col4:
-            st.button("📊 VẼ BIỂU ĐỒ", on_click=set_state, args=('bieu',))
-
-        st.sidebar.markdown("---") 
-        st.sidebar.button("✍️ CHUẨN HÓA DỮ LIỆU", on_click=set_state, args=('chuan',)) 
-
-        # 5. LOGIC HIỂN THỊ CHÍNH
-        st.markdown("---")
-        
-        ten_cot_hien_tai = ten_cot
-        gia_tri_hien_tai = gia_tri_tim
-
-        if st.session_state.get('loc'):
-            hien_thi_loc_loi(df, ten_cot_hien_tai)
-        
-        elif st.session_state.get('han'):
-            hien_thi_kiem_tra_han(df, ten_cot_hien_tai)
-
-        elif st.session_state.get('bieu'):
-            hien_thi_bieu_do(df, ten_cot_hien_tai)
-
-        elif st.session_state.get('chuan'):
-            st.warning("Tính năng Chuẩn hóa đang được kích hoạt. (Cần triển khai logic chi tiết)")
-            st.session_state['chuan'] = False
-
-        elif gia_tri_hien_tai: 
-            df_tra_cuu = df[df[ten_cot_hien_tai].astype(str).str.contains(gia_tri_hien_tai, case=False, na=False)]
-            hien_thi_uu_tien(df_tra_cuu)
-        
-        else:
-            st.subheader("Dữ liệu cơ bản:")
-            st.dataframe(df.head())
-
-    elif authentication_status is False:
-        st.error('Tên đăng nhập/Mật khẩu không đúng. Vui lòng thử lại.')
+    # Tạo mã hash cho mật khẩu "12345"
+    passwords_to_hash = ['12345']
     
-    elif authentication_status is None:
-        st.warning('Vui lòng đăng nhập để sử dụng ứng dụng.')
+    # Lưu ý: Cú pháp này dành cho streamlit-authenticator phiên bản mới
+    try:
+        hashed_passwords = stauth.Hasher(passwords_to_hash).generate()
+        st.code(hashed_passwords[0], language='text')
+    except Exception as e:
+        st.error(f"Có lỗi khi tạo hash: {e}")
 
+    st.markdown("---")
+    # =====================================================
+
+    # --- PHẦN CÒN LẠI CỦA ỨNG DỤNG (Sẽ chạy sau khi có config đúng) ---
+    st.write("Sau khi cập nhật file config.yaml với mã hash trên, ứng dụng sẽ hiển thị màn hình đăng nhập tại đây.")
 
 if __name__ == "__main__":
-    for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
-        if key not in st.session_state:
-            st.session_state[key] = False
-    
     main()
