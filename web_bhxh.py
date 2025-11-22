@@ -5,7 +5,8 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai # Dùng thư viện chính hãng Google
+import requests 
+import json
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -21,7 +22,7 @@ def set_state(name):
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU (TURBO MODE) ---
+# --- HÀM NẠP DỮ LIỆU ---
 @st.cache_data(ttl=3600)
 def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
@@ -47,17 +48,16 @@ def nap_du_lieu_toi_uu():
         st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ CƠ BẢN ---
+# --- CÁC HÀM HIỂN THỊ ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ.")
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
-    hien_thi_max = 50
-    if len(df_ket_qua) > hien_thi_max:
-        st.warning(f"⚠️ Chỉ hiện {hien_thi_max} kết quả đầu để mượt.")
-        df_ket_qua = df_ket_qua.head(hien_thi_max)
+    if len(df_ket_qua) > 50:
+        st.warning(f"⚠️ Chỉ hiện 50 kết quả đầu.")
+        df_ket_qua = df_ket_qua.head(50)
 
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
@@ -105,10 +105,10 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
         
         if not ds_het.empty:
-            st.subheader("🔴 Danh sách Hết Hạn (Top 500)")
+            st.subheader("🔴 Danh sách Hết Hạn")
             st.dataframe(ds_het.head(500), hide_index=True)
         if not ds_sap.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết (Top 500)")
+            st.subheader("⚠️ Danh sách Sắp Hết")
             st.dataframe(ds_sap.head(500), hide_index=True)
     except Exception as e: st.error(f"Lỗi ngày tháng: {e}")
 
@@ -120,28 +120,47 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: DÙNG THƯ VIỆN CHÍNH HÃNG (BẢN ỔN ĐỊNH NHẤT) ---
+# --- CHỨC NĂNG AI: CƠ CHẾ TỰ ĐỘNG THAY ĐỔI MODEL (QUAN TRỌNG) ---
+def call_gemini_final(api_key, prompt):
+    # Danh sách model để thử lần lượt
+    models_to_try = [
+        "gemini-1.5-flash", 
+        "gemini-1.5-pro", 
+        "gemini-1.0-pro", 
+        "gemini-pro"
+    ]
+    
+    headers = {'Content-Type': 'application/json'}
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+    
+    err_log = []
+    
+    for model in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(data), timeout=10)
+            
+            if response.status_code == 200:
+                # Thành công! Trả về kết quả ngay
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            else:
+                # Thất bại model này, ghi log và thử cái tiếp theo
+                err_log.append(f"{model}: {response.status_code}")
+                continue
+                
+        except Exception as e:
+            err_log.append(f"{model}: Lỗi mạng")
+            continue
+
+    return f"⚠️ Không thể kết nối AI. Chi tiết lỗi: {', '.join(err_log)}"
+
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
-    st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Thông Minh)")
+    st.info("💡 AI sẽ tự động tìm phiên bản tốt nhất để trả lời bạn.")
 
     # API Key CỦA BẠN
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
 
-    if not API_KEY:
-        st.warning("⚠️ Chưa có API Key.")
-        return
-
-    # Cấu hình Gemini
-    try:
-        genai.configure(api_key=API_KEY)
-        # SỬ DỤNG MODEL MỚI NHẤT: gemini-1.5-flash
-        model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception as e:
-        st.error(f"Lỗi cấu hình AI: {e}")
-        return
-
-    # Giao diện Chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -156,30 +175,27 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                try:
-                    # Chuẩn bị dữ liệu (Dùng to_string để tránh lỗi tabulate)
-                    data_sample = df.head(10).to_string(index=False)
-                    columns_info = ", ".join(df.columns.tolist())
-                    total_rows = len(df)
-                    
-                    context = f"""
-                    Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                    - Tổng số dòng: {total_rows}
-                    - Các cột: {columns_info}
-                    - Dữ liệu mẫu (10 dòng đầu):
-                    {data_sample}
-                    
-                    Câu hỏi người dùng: "{prompt}"
-                    Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
-                    """
-                    
-                    # Gọi AI
-                    response = model.generate_content(context)
-                    
-                    st.write(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-                except Exception as e:
-                    st.error(f"Lỗi kết nối: {e}")
+                # Dùng to_string để tránh lỗi tabulate
+                data_sample = df.head(10).to_string(index=False)
+                columns_info = ", ".join(df.columns.tolist())
+                total_rows = len(df)
+                
+                context = f"""
+                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                - Tổng số dòng: {total_rows}
+                - Các cột: {columns_info}
+                - Dữ liệu mẫu (10 dòng đầu):
+                {data_sample}
+                
+                Câu hỏi người dùng: "{prompt}"
+                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
+                """
+                
+                # Gọi hàm thông minh
+                tra_loi = call_gemini_final(API_KEY, context)
+                
+                st.write(tra_loi)
+                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
 
 # --- MAIN ---
 def main():
