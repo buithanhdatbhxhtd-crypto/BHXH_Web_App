@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth
 import yaml
-from yaml.loader import SafeLoader
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
@@ -17,7 +16,7 @@ DB_FILE = 'bhxh.db'
 TEN_BANG = 'ho_so_tham_gia'
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiIh', 'VSS_EMAIL']
 
-# --- HÀM TẠO CALLBACK CHO NÚT BẤM ---
+# --- HÀM TẠO CALLBACK ---
 def set_state(name):
     for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
         st.session_state[key] = False
@@ -55,7 +54,7 @@ def nap_du_lieu_tu_csdl():
     except Exception:
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ ---
+# --- CÁC HÀM HIỂN THỊ (GIỮ NGUYÊN) ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
@@ -121,38 +120,45 @@ def hien_thi_bieu_do(df, ten_cot):
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
-    # 1. Đọc cấu hình từ YAML
-    try:
-        with open('config.yaml') as file:
-            config = yaml.load(file, Loader=SafeLoader)
-    except FileNotFoundError:
-        st.error("❌ Lỗi: Không tìm thấy file 'config.yaml'.")
-        st.stop()
-    except Exception as e:
-        st.error(f"❌ Lỗi file config: {e}")
-        st.stop()
+    # 1. CẤU HÌNH TÀI KHOẢN TRỰC TIẾP (Bỏ qua file YAML để tránh lỗi)
+    
+    # Tự động tạo mã hash cho '12345' để đảm bảo khớp 100%
+    passwords_to_hash = ['12345']
+    hashed_passwords = stauth.Hasher(passwords_to_hash).generate()
+    
+    credentials = {
+        'usernames': {
+            'bhxh_admin': {
+                'name': 'Admin BHXH',
+                'email': 'admin@bhxh.vn',
+                'password': hashed_passwords[0] # Lấy mã hash vừa tạo
+            }
+        }
+    }
+
+    cookie = {
+        'name': 'bhxh_cookie',
+        'key': 'mot_chuoi_ky_tu_ngau_nhien_rat_dai_va_bao_mat',
+        'expiry_days': 30
+    }
 
     # 2. Khởi tạo Authenticator
     authenticator = stauth.Authenticate(
-        config['credentials'],
-        config['cookie']['name'],
-        config['cookie']['key'],
-        config['cookie']['expiry_days']
+        credentials,
+        cookie['name'],
+        cookie['key'],
+        cookie['expiry_days']
     )
 
-    # 3. Hiển thị Form Đăng nhập (Code chuẩn mới)
-    # Trong bản mới, login() tự động render và lưu trạng thái vào session_state
+    # 3. Hiển thị Form Đăng nhập
     authenticator.login(location='main')
 
-    # 4. Kiểm tra trạng thái đăng nhập từ session_state
+    # 4. Kiểm tra trạng thái
     if st.session_state["authentication_status"]:
-        # --- GIAO DIỆN CHÍNH SAU KHI ĐĂNG NHẬP ---
         
-        # Lấy tên người dùng để hiển thị chào mừng
-        name = st.session_state["name"]
-        
+        # --- GIAO DIỆN CHÍNH ---
         with st.sidebar:
-            st.write(f'Xin chào, **{name}**! 👋')
+            st.write(f'Xin chào, **{st.session_state["name"]}**! 👋')
             authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
@@ -161,7 +167,6 @@ def main():
         df = nap_du_lieu_tu_csdl()
         if df.empty:
             st.info("Vui lòng kiểm tra file dữ liệu.")
-            # Dùng return để thoát hàm main, tránh lỗi thụt dòng
             return 
 
         st.success(f"✅ Hệ thống sẵn sàng: {len(df)} hồ sơ.")
@@ -187,7 +192,6 @@ def main():
         # Logic hiển thị
         st.markdown("---")
         
-        # Khởi tạo session state chức năng nếu chưa có
         for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
             if key not in st.session_state:
                 st.session_state[key] = False
@@ -202,7 +206,6 @@ def main():
             st.warning("Tính năng đang phát triển.")
             st.session_state['chuan'] = False
         elif gia_tri_tim:
-            # Tự động tìm kiếm khi có từ khóa
             df_tra_cuu = df[df[ten_cot].astype(str).str.contains(gia_tri_tim, case=False, na=False)]
             hien_thi_uu_tien(df_tra_cuu)
         else:
