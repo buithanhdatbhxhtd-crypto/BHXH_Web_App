@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth
 import yaml
 import bcrypt
+import plotly.express as px
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
@@ -145,9 +146,33 @@ def hien_thi_bieu_do(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
         return
-    st.markdown("### 📊 BIỂU ĐỒ THỐNG KÊ")
-    thong_ke = df[ten_cot].value_counts().head(20)
-    st.bar_chart(thong_ke)
+    
+    st.markdown(f"### 📊 BIỂU ĐỒ THỐNG KÊ: {ten_cot}")
+    
+    # 1. Chuẩn bị dữ liệu thống kê
+    # reset_index() giúp biến kết quả thành bảng có cột rõ ràng để vẽ
+    thong_ke = df[ten_cot].value_counts().reset_index()
+    thong_ke.columns = ['Phân loại', 'Số lượng'] 
+    
+    # 2. Vẽ biểu đồ bằng Plotly
+    fig = px.bar(
+        thong_ke, 
+        x='Phân loại', 
+        y='Số lượng',
+        text='Số lượng',  # Hiển thị con số ngay trên đầu cột
+        color='Phân loại', # Tự động tô màu sắc khác nhau
+        title=f"Phân bố hồ sơ theo {ten_cot}"
+    )
+    
+    # Tinh chỉnh hiển thị
+    fig.update_traces(textposition='outside') # Đưa số liệu lên trên cột
+    
+    # 3. Xuất biểu đồ ra màn hình
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Hiển thị bảng số liệu chi tiết bên dưới (tùy chọn)
+    with st.expander("Xem số liệu chi tiết"):
+        st.dataframe(thong_ke, hide_index=True)
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
