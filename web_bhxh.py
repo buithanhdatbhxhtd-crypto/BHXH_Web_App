@@ -5,7 +5,8 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai # Thư viện AI
+import requests # Thư viện gửi yêu cầu trực tiếp
+import json
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -120,64 +121,68 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: PHẦN QUAN TRỌNG ĐÃ ĐƯỢC SỬA ---
+# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (DIRECT API) - FIX LỖI 100% ---
+def call_gemini_direct(api_key, prompt):
+    # URL gọi trực tiếp mô hình Flash siêu nhanh
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    try:
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        if response.status_code == 200:
+            return response.json()['candidates'][0]['content']['parts'][0]['text']
+        else:
+            return f"Lỗi từ Google: {response.text}"
+    except Exception as e:
+        return f"Lỗi kết nối: {str(e)}"
+
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ)")
-    st.info("💡 AI trả lời dựa trên 10 dòng dữ liệu mẫu để đảm bảo tốc độ.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Ổn định)")
+    st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
 
-    # 1. API Key (Đã điền sẵn)
-    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" 
+    # API Key của bạn
+    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
 
-    # 2. Quản lý lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Hiển thị lịch sử
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    # 3. Xử lý câu hỏi
     if prompt := st.chat_input("Hỏi gì đó về dữ liệu..."):
-        # Hiện câu hỏi người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # AI trả lời
         with st.chat_message("assistant"):
-            with st.spinner("AI đang đọc dữ liệu..."):
-                try:
-                    # Chuẩn bị dữ liệu mẫu gửi cho AI
-                    data_sample = df.head(10).to_markdown(index=False)
-                    columns_info = ", ".join(df.columns.tolist())
-                    total_rows = len(df)
-                    
-                    # Prompt gửi cho AI
-                    context = f"""
-                    Bạn là trợ lý dữ liệu BHXH. 
-                    - Tổng số dòng dữ liệu: {total_rows}
-                    - Các cột: {columns_info}
-                    - Dữ liệu mẫu (10 dòng đầu):
-                    {data_sample}
-                    
-                    Câu hỏi: "{prompt}"
-                    Hãy trả lời dựa trên thông tin trên.
-                    """
-                    
-                    genai.configure(api_key=API_KEY)
-                    
-                    # --- SỬA LỖI TẠI ĐÂY: ĐỔI TÊN MODEL ---
-                    # Thử dùng bản Pro mạnh mẽ
-                    model = genai.GenerativeModel('gemini-pro') 
-                    # --------------------------------------
-                    
-                    response = model.generate_content(context)
-                    
-                    st.write(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-                except Exception as e:
-                    st.error(f"Lỗi kết nối AI: {e}")
+            with st.spinner("AI đang suy nghĩ..."):
+                # Chuẩn bị dữ liệu gửi đi
+                data_sample = df.head(10).to_markdown(index=False)
+                columns_info = ", ".join(df.columns.tolist())
+                total_rows = len(df)
+                
+                context = f"""
+                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                - Tổng số dòng: {total_rows}
+                - Các cột: {columns_info}
+                - Dữ liệu mẫu (10 dòng đầu):
+                {data_sample}
+                
+                Câu hỏi người dùng: "{prompt}"
+                Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
+                """
+                
+                # Gọi hàm trực tiếp
+                tra_loi = call_gemini_direct(API_KEY, context)
+                
+                st.write(tra_loi)
+                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
+
 # --- MAIN ---
 def main():
     # Mật khẩu 12345
@@ -224,7 +229,7 @@ def main():
         if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df) # Gọi hàm AI
+        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df)
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
