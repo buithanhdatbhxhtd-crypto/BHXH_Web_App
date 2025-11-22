@@ -121,9 +121,8 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (DÙNG MODEL GEMINI-PRO ỔN ĐỊNH) ---
+# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (GEMINI-PRO) ---
 def call_gemini_direct(api_key, prompt):
-    # SỬ DỤNG MODEL GEMINI-PRO (Bản ổn định nhất)
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
     headers = {'Content-Type': 'application/json'}
     data = {
@@ -144,7 +143,7 @@ def hien_thi_tro_ly_ai_lite(df):
     st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Ổn định)")
     st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
 
-    # API Key CỦA BẠN
+    # API Key CỦA BẠN (Đã điền sẵn)
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
 
     if "messages" not in st.session_state:
@@ -161,8 +160,10 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                # Chuẩn bị dữ liệu gửi đi
-                data_sample = df.head(10).to_markdown(index=False)
+                # --- SỬA LỖI TẠI ĐÂY: Dùng to_string() thay vì to_markdown() ---
+                data_sample = df.head(10).to_string(index=False)
+                # -------------------------------------------------------------
+                
                 columns_info = ", ".join(df.columns.tolist())
                 total_rows = len(df)
                 
@@ -177,7 +178,6 @@ def hien_thi_tro_ly_ai_lite(df):
                 Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
                 """
                 
-                # Gọi hàm trực tiếp
                 tra_loi = call_gemini_direct(API_KEY, context)
                 
                 st.write(tra_loi)
