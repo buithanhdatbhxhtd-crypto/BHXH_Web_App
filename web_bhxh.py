@@ -141,46 +141,72 @@ def hien_thi_bieu_do(df, ten_cot):
     st.plotly_chart(fig, use_container_width=True)
 
 # --- CHỨC NĂNG MỚI: TRỢ LÝ ẢO AI ---
-def hien_thi_tro_ly_ai(df):
+ddef hien_thi_tro_ly_ai(df):
     st.markdown("### 🤖 TRỢ LÝ ẢO AI (Chat với Dữ liệu)")
     st.info("💡 Bạn có thể hỏi: 'Có bao nhiêu người tên Lan?', 'Vẽ biểu đồ giới tính', hoặc 'Ai sắp hết hạn thẻ?'")
     
-    # 1. Cấu hình API Key (DÁN KEY CỦA BẠN VÀO DÒNG DƯỚI)
-    api_key = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" 
+    # 1. Cấu hình API Key
+    api_key = "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY" 
     
-    if api_key == "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550":
-        st.warning("⚠️ Vui lòng nhập Google API Key vào code web_bhxh.py để sử dụng tính năng này.")
+    if api_key == "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY" or not api_key:
+        st.warning("⚠️ Vui lòng nhập Google API Key vào code để sử dụng.")
         return
 
-    # 2. Khởi tạo AI
+    # 2. Khởi tạo AI (Thêm config để tránh lỗi biểu đồ)
     llm = GoogleGemini(api_key=api_key)
-    sdf = SmartDataframe(df, config={"llm": llm})
+    
+    # Config này giúp PandasAI ổn định hơn trên Streamlit Cloud
+    config = {"llm": llm, "enable_cache": False, "save_charts": False} 
+    sdf = SmartDataframe(df, config=config)
 
     # 3. Giao diện Chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Hiển thị lịch sử chat
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+    # Dùng container để gom nhóm lịch sử chat
+    chat_container = st.container()
+    
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                # Nếu nội dung là hình ảnh (đường dẫn file png)
+                if isinstance(message["content"], str) and message["content"].endswith(".png"):
+                    if os.path.exists(message["content"]):
+                        st.image(message["content"])
+                    else:
+                        st.error("Không tìm thấy hình ảnh biểu đồ.")
+                else:
+                    st.markdown(message["content"])
 
-    # Ô nhập liệu
-    if prompt := st.chat_input("Nhập câu hỏi của bạn về dữ liệu BHXH..."):
-        # Hiển thị câu hỏi của người dùng
+    # Ô nhập liệu nằm bên dưới
+    if prompt := st.chat_input("Hỏi AI về dữ liệu..."):
+        # Hiển thị câu hỏi ngay lập tức
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-        # AI suy nghĩ và trả lời
-        with st.chat_message("assistant"):
-            with st.spinner("AI đang phân tích dữ liệu..."):
-                try:
-                    response = sdf.chat(prompt)
-                    st.write(response) # Dùng st.write để hiển thị cả văn bản lẫn biểu đồ nếu có
-                    st.session_state.messages.append({"role": "assistant", "content": str(response)})
-                except Exception as e:
-                    st.error(f"AI gặp lỗi: {e}")
+            # AI trả lời
+            with st.chat_message("assistant"):
+                with st.spinner("AI đang suy nghĩ..."):
+                    try:
+                        # AI trả về kết quả (có thể là text, dataframe, hoặc đường dẫn ảnh)
+                        response = sdf.chat(prompt)
+                        
+                        # Xử lý hiển thị kết quả thông minh hơn
+                        if isinstance(response, pd.DataFrame):
+                            st.dataframe(response)
+                            st.session_state.messages.append({"role": "assistant", "content": "Dưới đây là bảng dữ liệu:"})
+                        elif str(response).endswith(".png") and os.path.exists(str(response)):
+                            st.image(response)
+                            # Lưu đường dẫn ảnh vào lịch sử
+                            st.session_state.messages.append({"role": "assistant", "content": str(response)})
+                        else:
+                            st.write(response)
+                            st.session_state.messages.append({"role": "assistant", "content": str(response)})
+                            
+                    except Exception as e:
+                        st.error(f"AI gặp lỗi: {e}")
 
 
 # --- PHẦN CHÍNH (MAIN) ---
