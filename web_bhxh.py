@@ -5,8 +5,7 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import requests 
-import json
+from datetime import datetime, timedelta
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -48,20 +47,20 @@ def nap_du_lieu_toi_uu():
         st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ CƠ BẢN ---
+# --- CÁC HÀM HIỂN THỊ ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
-        st.warning("😞 Không tìm thấy hồ sơ.")
+        st.warning("😞 Không tìm thấy kết quả.")
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
     if len(df_ket_qua) > 50:
-        st.warning(f"⚠️ Chỉ hiện 50 kết quả đầu.")
+        st.caption(f"⚠️ Chỉ hiển thị 50/{len(df_ket_qua)} kết quả đầu tiên.")
         df_ket_qua = df_ket_qua.head(50)
 
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
-        tieu_de = f"👤 HỒ SƠ: {row.get('hoTen', 'Na')} - {row.get('soBhxh', '')}"
+        tieu_de = f"👤 {row.get('hoTen', 'Na')} - {row.get('soBhxh', '')}"
         with st.expander(tieu_de, expanded=False):
             c1, c2 = st.columns(2)
             for idx, cot in enumerate(COT_UU_TIEN):
@@ -73,7 +72,6 @@ def hien_thi_uu_tien(df_ket_qua):
                          break
                 if idx % 2 == 0: c1.markdown(f"**🔹 {cot}:** {val}")
                 else: c2.markdown(f"**🔹 {cot}:** {val}")
-            st.caption("Gốc:")
             st.dataframe(row.to_frame().T, hide_index=True)
 
 def hien_thi_loc_loi(df, ten_cot):
@@ -120,40 +118,10 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP ĐẾN MODEL FLASH (FIX 100%) ---
-def call_gemini_flash_direct(api_key, prompt):
-    # Sử dụng model 1.5-flash mới nhất và ổn định nhất
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "contents": [{
-            "parts": [{"text": prompt}]
-        }]
-    }
-    
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=15)
-        
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            # In ra lỗi chi tiết từ Google nếu có
-            error_msg = response.json().get('error', {}).get('message', response.text)
-            return f"Lỗi từ Google (Mã {response.status_code}): {error_msg}"
-            
-    except Exception as e:
-        return f"Lỗi kết nối mạng: {str(e)}"
-
-def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
-    
-    # Ô nhập Key
-    api_key_input = st.text_input("🔑 Nhập Google API Key:", type="password")
-    
-    if not api_key_input:
-        st.info("👈 Vui lòng nhập Key để bắt đầu.")
-        return
+# --- CHỨC NĂNG MỚI: CHATBOT LOGIC (KHÔNG CẦN API KEY) ---
+def hien_thi_chatbot_noi_bo(df):
+    st.markdown("### 🤖 TRỢ LÝ ẢO (Thông Minh & Ổn Định)")
+    st.info("💡 Trợ lý trả lời ngay lập tức mà không cần kết nối Google.")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -162,37 +130,68 @@ def hien_thi_tro_ly_ai_lite(df):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Hỏi gì đó về dữ liệu..."):
+    if prompt := st.chat_input("Ví dụ: 'Tìm tên Lan', 'Đếm số lượng', 'Vẽ biểu đồ giới tính'"):
+        # 1. Hiện câu hỏi
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
+        # 2. Xử lý Logic (Bộ não của Chatbot)
         with st.chat_message("assistant"):
-            with st.spinner("AI đang suy nghĩ..."):
-                # Chuẩn bị dữ liệu dạng chuỗi
-                data_sample = df.head(10).to_string(index=False)
-                columns_info = ", ".join(df.columns.tolist())
-                total_rows = len(df)
+            msg_bot = ""
+            prompt_lower = prompt.lower()
+            
+            try:
+                # --- LOGIC 1: TÌM KIẾM ---
+                if "tìm" in prompt_lower or "lọc" in prompt_lower or "tra" in prompt_lower:
+                    # Lấy từ khóa sau chữ "tên" hoặc "là"
+                    tu_khoa = prompt_lower
+                    for key in ["tên ", "là ", "người ", "tìm "]:
+                        if key in tu_khoa:
+                            tu_khoa = tu_khoa.split(key)[-1].strip()
+                    
+                    mask = df['hoTen'].astype(str).str.lower().str.contains(tu_khoa)
+                    ket_qua = df[mask]
+                    
+                    msg_bot = f"🔍 Đã tìm thấy **{len(ket_qua)}** người có tên chứa '**{tu_khoa}**'."
+                    st.write(msg_bot)
+                    if not ket_qua.empty:
+                        st.dataframe(ket_qua.head(20))
                 
-                context = f"""
-                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                - Tổng số dòng: {total_rows}
-                - Các cột: {columns_info}
-                - Dữ liệu mẫu (10 dòng đầu):
-                {data_sample}
-                
-                Câu hỏi người dùng: "{prompt}"
-                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
-                """
-                
-                # Gọi hàm trực tiếp
-                tra_loi = call_gemini_flash_direct(api_key_input, context)
-                
-                st.write(tra_loi)
-                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
+                # --- LOGIC 2: ĐẾM SỐ LƯỢNG ---
+                elif "bao nhiêu" in prompt_lower or "đếm" in prompt_lower or "tổng" in prompt_lower:
+                    msg_bot = f"📊 Tổng số hồ sơ trong hệ thống là: **{len(df)}** hồ sơ."
+                    st.write(msg_bot)
+
+                # --- LOGIC 3: VẼ BIỂU ĐỒ ---
+                elif "biểu đồ" in prompt_lower or "vẽ" in prompt_lower:
+                    cot_ve = 'gioiTinh' # Mặc định
+                    if "tỉnh" in prompt_lower: cot_ve = 'maTinh'
+                    if "huyện" in prompt_lower: cot_ve = 'maHuyen'
+                    
+                    msg_bot = f"📈 Đang vẽ biểu đồ theo cột: {cot_ve}"
+                    st.write(msg_bot)
+                    hien_thi_bieu_do(df, cot_ve)
+
+                # --- LOGIC 4: KIỂM TRA HẠN ---
+                elif "hạn" in prompt_lower or "hết" in prompt_lower:
+                    msg_bot = "⏳ Đang kiểm tra hạn BHYT..."
+                    st.write(msg_bot)
+                    hien_thi_kiem_tra_han(df, 'hanTheDen')
+
+                # --- KHÔNG HIỂU ---
+                else:
+                    msg_bot = "Xin lỗi, tôi chưa hiểu ý bạn. Hãy thử: 'Tìm tên [ABC]', 'Vẽ biểu đồ', 'Kiểm tra hạn'."
+                    st.write(msg_bot)
+
+                st.session_state.messages.append({"role": "assistant", "content": msg_bot})
+
+            except Exception as e:
+                st.error(f"Lỗi xử lý: {e}")
 
 # --- MAIN ---
 def main():
+    # Mật khẩu 12345
     hashed_pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
     credentials = {'usernames': {'bhxh_admin': {'name': 'Admin BHXH', 'email': 'a@b.c', 'password': hashed_pw}}}
     cookie = {'name': 'bhxh_cookie', 'key': 'key_dai_ngoang', 'expiry_days': 30}
@@ -215,7 +214,7 @@ def main():
         cols = df.columns.tolist()
         idx_sobhxh = cols.index('soBhxh') if 'soBhxh' in cols else 0
         ten_cot = st.sidebar.selectbox("Cột xử lý:", options=cols, index=idx_sobhxh)
-        tim_kiem = st.sidebar.text_input("Tìm kiếm:", placeholder="Nhập tên...")
+        tim_kiem = st.sidebar.text_input("Tìm kiếm nhanh:", placeholder="Nhập tên...")
 
         st.sidebar.markdown("---")
         c1, c2 = st.sidebar.columns(2)
@@ -227,7 +226,7 @@ def main():
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         
         st.sidebar.markdown("---")
-        st.sidebar.button("🤖 TRỢ LÝ AI", on_click=set_state, args=('ai',))
+        st.sidebar.button("🤖 TRỢ LÝ ẢO", on_click=set_state, args=('ai',))
 
         st.markdown("---")
         for key in ['search', 'loc', 'han', 'bieu', 'ai']:
@@ -236,7 +235,7 @@ def main():
         if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df)
+        elif st.session_state.get('ai'): hien_thi_chatbot_noi_bo(df) # Gọi chatbot nội bộ
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
