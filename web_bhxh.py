@@ -121,24 +121,43 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
     if ten_cot_ngay not in df.columns:
         st.error(f"❌ Không tìm thấy cột Ngày Hết Hạn: '{ten_cot_ngay}'.")
         return
+    
+    # Tạo bản sao để không ảnh hưởng dữ liệu gốc
     df_temp = df.copy()
+    
     try:
+        # 1. Chuyển đổi sang dạng ngày tháng để tính toán
         df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
         df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
+        
         hom_nay = datetime.now()
         sau_30_ngay = hom_nay + timedelta(days=30)
-        ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay]
-        ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)]
+        
+        # 2. Lọc danh sách
+        ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay].copy()
+        ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)].copy()
+        
+        # 3. --- LÀM ĐẸP: Format lại thành dd/mm/yyyy ---
+        if not ds_da_het_han.empty:
+            ds_da_het_han[ten_cot_ngay] = ds_da_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
+            
+        if not ds_sap_het_han.empty:
+            ds_sap_het_han[ten_cot_ngay] = ds_sap_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
+        # -----------------------------------------------
+
         st.markdown("### ⏳ KẾT QUẢ KIỂM TRA HẠN")
         col1, col2 = st.columns(2)
         col1.metric(label="🔴 ĐÃ HẾT HẠN", value=f"{len(ds_da_het_han)} người")
         col2.metric(label="⚠️ SẮP HẾT HẠN (30 ngày)", value=f"{len(ds_sap_het_han)} người")
+        
         if not ds_da_het_han.empty:
             st.subheader("🔴 Danh sách đã Hết Hạn")
-            st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
+            st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
+            
         if not ds_sap_het_han.empty:
             st.subheader("⚠️ Danh sách Sắp Hết Hạn")
-            st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']])
+            st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
+            
     except Exception as e:
         st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
 
