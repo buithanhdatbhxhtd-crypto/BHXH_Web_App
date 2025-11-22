@@ -10,6 +10,9 @@ import json
 import re
 import unicodedata
 from datetime import datetime, timedelta
+from io import BytesIO
+from docx import Document # Thư viện xử lý Word
+from docx.shared import Pt, RGBColor
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -27,6 +30,56 @@ def xoa_dau_tieng_viet(text):
     text = text.lower().strip()
     text = re.sub(r'\s+', ' ', text)
     return text
+
+# --- HÀM TẠO FILE WORD (PHIẾU HỒ SƠ) ---
+def tao_phieu_word(row):
+    doc = Document()
+    
+    # Tiêu đề
+    heading = doc.add_heading('PHIẾU THÔNG TIN BHXH', 0)
+    heading.alignment = 1 # Căn giữa
+    
+    doc.add_paragraph(f'Ngày xuất phiếu: {datetime.now().strftime("%d/%m/%Y %H:%M")}')
+    doc.add_paragraph('--------------------------------------------------')
+    
+    # Nội dung
+    p = doc.add_paragraph()
+    run = p.add_run(f"HỌ VÀ TÊN: {row.get('hoTen', '').upper()}")
+    run.bold = True
+    run.font.size = Pt(14)
+    run.font.color.rgb = RGBColor(0, 51, 102) # Màu xanh đậm
+    
+    # Các thông tin chi tiết
+    table = doc.add_table(rows=1, cols=2)
+    table.style = 'Table Grid'
+    
+    # Điền dữ liệu vào bảng
+    hdr_cells = table.rows[0].cells
+    hdr_cells[0].text = 'THÔNG TIN'
+    hdr_cells[1].text = 'CHI TIẾT'
+    
+    for cot in COT_UU_TIEN:
+        row_cells = table.add_row().cells
+        row_cells[0].text = cot
+        val = row.get(cot, '')
+        row_cells[1].text = str(val) if pd.notna(val) else ""
+        
+    # Footer
+    doc.add_paragraph('\n')
+    doc.add_paragraph('Người trích xuất: Admin BHXH').alignment = 2
+    
+    # Lưu vào bộ nhớ đệm
+    bio = BytesIO()
+    doc.save(bio)
+    return bio
+
+# --- HÀM TẠO FILE EXCEL (DANH SÁCH) ---
+def tao_file_excel(df_input):
+    output = BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    df_input.to_excel(writer, index=False, sheet_name='DanhSach')
+    writer.close()
+    return output
 
 # --- HÀM TẠO CALLBACK ---
 def set_state(name):
@@ -67,6 +120,15 @@ def hien_thi_uu_tien(df_ket_qua):
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
+    # Nút tải danh sách Excel
+    excel_data = tao_file_excel(df_ket_qua)
+    st.download_button(
+        label="📥 Tải danh sách này về (Excel)",
+        data=excel_data.getvalue(),
+        file_name=f"danh_sach_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    
     if len(df_ket_qua) > 50:
         st.caption(f"⚠️ Đang hiển thị 50/{len(df_ket_qua)} kết quả đầu tiên.")
         df_ket_qua = df_ket_qua.head(50)
@@ -75,16 +137,31 @@ def hien_thi_uu_tien(df_ket_qua):
         row = df_ket_qua.iloc[i]
         tieu_de = f"👤 {row.get('hoTen', 'Na')} - {row.get('soBhxh', '')}"
         with st.expander(tieu_de, expanded=False):
-            c1, c2 = st.columns(2)
-            for idx, cot in enumerate(COT_UU_TIEN):
-                val = "(Trống)"
-                for c_ex in df_ket_qua.columns:
-                     if cot.lower() == c_ex.lower():
-                         v = row[c_ex]
-                         if pd.notna(v) and str(v).strip() != "" and str(v).lower() != "nan": val = str(v)
-                         break
-                if idx % 2 == 0: c1.markdown(f"**🔹 {cot}:** {val}")
-                else: c2.markdown(f"**🔹 {cot}:** {val}")
+            c1, c2 = st.columns([3, 1]) # Chia cột lệch để để nút tải
+            
+            with c1:
+                col_a, col_b = st.columns(2)
+                for idx, cot in enumerate(COT_UU_TIEN):
+                    val = "(Trống)"
+                    for c_ex in df_ket_qua.columns:
+                         if cot.lower() == c_ex.lower():
+                             v = row[c_ex]
+                             if pd.notna(v) and str(v).strip() != "" and str(v).lower() != "nan": val = str(v)
+                             break
+                    if idx % 2 == 0: col_a.markdown(f"**🔹 {cot}:** {val}")
+                    else: col_b.markdown(f"**🔹 {cot}:** {val}")
+            
+            with c2:
+                # Nút tải phiếu Word cho từng người
+                word_data = tao_phieu_word(row)
+                st.download_button(
+                    label="📄 In Phiếu",
+                    data=word_data.getvalue(),
+                    file_name=f"Phieu_{row.get('soBhxh', 'hs')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"btn_word_{i}"
+                )
+
             st.dataframe(row.to_frame().T, hide_index=True)
 
 def hien_thi_loc_loi(df, ten_cot):
@@ -93,6 +170,16 @@ def hien_thi_loc_loi(df, ten_cot):
     df_loc = df[col_chuan.isin(rong)]
     if not df_loc.empty:
         st.warning(f"⚠️ {len(df_loc)} hồ sơ thiếu '{ten_cot}'.")
+        
+        # Nút tải danh sách lỗi
+        excel_data = tao_file_excel(df_loc)
+        st.download_button(
+            label="📥 Tải danh sách lỗi (Excel)",
+            data=excel_data.getvalue(),
+            file_name=f"danh_sach_loi_{ten_cot}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        
         st.dataframe(df_loc.head(1000))
     else:
         st.success(f"Tuyệt vời! Cột '{ten_cot}' đủ dữ liệu.")
@@ -116,25 +203,44 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
         
         if not ds_het.empty:
-            st.subheader("🔴 Danh sách Hết Hạn (Top 500)")
+            st.subheader("🔴 Danh sách Hết Hạn")
+            # Nút tải
+            excel_het = tao_file_excel(ds_het)
+            st.download_button("📥 Tải DS Hết Hạn", excel_het.getvalue(), "ds_het_han.xlsx")
             st.dataframe(ds_het.head(500), hide_index=True)
+            
         if not ds_sap.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết (Top 500)")
+            st.subheader("⚠️ Danh sách Sắp Hết")
+            # Nút tải
+            excel_sap = tao_file_excel(ds_sap)
+            st.download_button("📥 Tải DS Sắp Hết", excel_sap.getvalue(), "ds_sap_het.xlsx")
             st.dataframe(ds_sap.head(500), hide_index=True)
+            
     except Exception as e: st.error(f"Lỗi ngày tháng: {e}")
 
-def hien_thi_bieu_do(df, ten_cot):
-    st.markdown(f"### 📊 BIỂU ĐỒ: {ten_cot}")
-    thong_ke = df[ten_cot].value_counts().head(20).reset_index()
-    thong_ke.columns = ['Loại', 'Số lượng'] 
-    fig = px.bar(thong_ke, x='Loại', y='Số lượng', text='Số lượng', color='Loại')
+def hien_thi_bieu_do_tuong_tac(df, ten_cot):
+    st.markdown(f"### 📊 BIỂU ĐỒ TƯƠNG TÁC: {ten_cot}")
+    thong_ke = df[ten_cot].value_counts().reset_index()
+    thong_ke.columns = ['Phân loại', 'Số lượng'] 
+    
+    fig = px.bar(thong_ke, x='Phân loại', y='Số lượng', text='Số lượng', color='Phân loại')
     fig.update_traces(textposition='outside')
-    st.plotly_chart(fig, use_container_width=True)
+    
+    event = st.plotly_chart(fig, use_container_width=True, on_select="rerun")
 
-# --- CHATBOT THÔNG MINH (ĐÃ FIX LỖI NHẬN DIỆN SAI) ---
+    if event and event['selection']['points']:
+        gia_tri_chon = event['selection']['points'][0]['x']
+        st.divider()
+        st.info(f"🔍 Bạn vừa chọn: **{gia_tri_chon}**.")
+        df_loc = df[df[ten_cot] == gia_tri_chon]
+        hien_thi_uu_tien(df_loc)
+    else:
+        st.info("💡 Mẹo: Nhấp vào cột biểu đồ để xem chi tiết.")
+
+# --- CHATBOT THÔNG MINH ---
 def hien_thi_chatbot_thong_minh(df):
     st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
-    st.info("💡 Bạn cứ nhập tự nhiên: 'Lan 22/01/1988', 'tìm Bùi Thành Đạt', 'số thẻ 12345'")
+    st.info("💡 Ví dụ: 'Lan 12/5/2012', 'tìm hùng', 'vẽ biểu đồ giới tính'")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -143,93 +249,72 @@ def hien_thi_chatbot_thong_minh(df):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Nhập thông tin cần tìm..."):
+    if prompt := st.chat_input("Nhập yêu cầu tra cứu..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            # 1. Chuẩn bị
+            msg_bot = []
+            prompt_khong_dau = xoa_dau_tieng_viet(prompt)
             df_result = df.copy()
             df_result['hoTen_khongdau'] = df_result['hoTen'].apply(lambda x: xoa_dau_tieng_viet(str(x)))
-            prompt_khong_dau = xoa_dau_tieng_viet(prompt)
-            
-            msg_bot = [] 
-            found_filter = False # Cờ đánh dấu xem có tìm thấy điều kiện lọc nào không
+            filters = [] 
 
             try:
-                # --- BƯỚC 1: ƯU TIÊN TÌM NGÀY THÁNG ---
-                # Tìm chuỗi số/số/số hoặc số-số-số
+                # Logic Ngày
                 date_match = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', prompt)
                 if date_match:
-                    ngay_nhap = date_match.group().replace('-', '/')
+                    ngay_raw = date_match.group().replace('-', '/')
                     try:
-                        date_obj = pd.to_datetime(ngay_nhap, dayfirst=True)
+                        date_obj = pd.to_datetime(ngay_raw, dayfirst=True)
                         ngay_chuan = date_obj.strftime('%d/%m/%Y')
-                        
-                        # Lọc ngày
                         mask_date = df_result['ngaySinh'].astype(str).str.contains(ngay_chuan)
                         df_result = df_result[mask_date]
-                        
-                        msg_bot.append(f"📅 Ngày sinh: **{ngay_chuan}**")
-                        found_filter = True
-                        
-                        # Xóa ngày khỏi câu lệnh để tránh nhiễu khi tìm tên
-                        prompt_khong_dau = prompt_khong_dau.replace(xoa_dau_tieng_viet(ngay_nhap), "").strip()
+                        filters.append(f"Ngày sinh: **{ngay_chuan}**")
+                        prompt_khong_dau = prompt_khong_dau.replace(xoa_dau_tieng_viet(ngay_raw), "")
                     except: pass
 
-                # --- BƯỚC 2: TÌM MÃ SỐ ---
+                # Logic Mã số
                 numbers = re.findall(r'\b\d{5,}\b', prompt)
                 for num in numbers:
                     if date_match and num in date_match.group(): continue
-                    
                     mask_so = (df_result['soBhxh'].astype(str).str.contains(num)) | \
                               (df_result['soCmnd'].astype(str).str.contains(num))
                     df_result = df_result[mask_so]
-                    msg_bot.append(f"🔢 Mã số: **{num}**")
-                    found_filter = True
-                    prompt_khong_dau = prompt_khong_dau.replace(num, "").strip()
+                    filters.append(f"Mã số: **{num}**")
+                    prompt_khong_dau = prompt_khong_dau.replace(num, "")
 
-                # --- BƯỚC 3: TÌM TÊN (PHẦN CÒN LẠI) ---
-                # Xóa từ khóa rác, giữ lại tên
+                # Logic Tên
                 tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"]
-                for w in tu_rac:
-                    prompt_khong_dau = re.sub(r'\b' + w + r'\b', '', prompt_khong_dau)
-                
-                # Loại bỏ lệnh chức năng khỏi phần tên để tránh tìm nhầm
+                for w in tu_rac: prompt_khong_dau = re.sub(r'\b' + w + r'\b', '', prompt_khong_dau)
                 prompt_khong_dau = re.sub(r'\b(bieu do|thong ke|han|het han)\b', '', prompt_khong_dau)
                 
                 ten_can_tim = re.sub(r'\s+', ' ', prompt_khong_dau).strip()
                 
-                if len(ten_can_tim) > 1: # Tên phải dài hơn 1 ký tự mới tìm
+                if len(ten_can_tim) > 1:
                     df_result = df_result[df_result['hoTen_khongdau'].str.contains(ten_can_tim)]
-                    msg_bot.append(f"🔤 Tên chứa: **{ten_can_tim}**")
-                    found_filter = True
+                    filters.append(f"Tên chứa: **{ten_can_tim}**")
 
-                # --- BƯỚC 4: QUYẾT ĐỊNH HIỂN THỊ ---
-                # Nếu ĐÃ CÓ điều kiện lọc (Tên hoặc Ngày hoặc Mã) -> Ưu tiên hiển thị kết quả tìm kiếm
-                if found_filter:
-                    st.write(f"🔍 Đang lọc theo: {' + '.join(msg_bot)}")
+                # Tổng hợp
+                if "bieu do" in xoa_dau_tieng_viet(prompt):
+                    cot_ve = 'gioiTinh'
+                    if "tinh" in xoa_dau_tieng_viet(prompt): cot_ve = 'maTinh'
+                    if "huyen" in xoa_dau_tieng_viet(prompt): cot_ve = 'maHuyen'
+                    st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
+                    hien_thi_bieu_do_tuong_tac(df, cot_ve)
+                elif "han" in xoa_dau_tieng_viet(prompt):
+                    st.write("⏳ Đang kiểm tra hạn BHYT...")
+                    hien_thi_kiem_tra_han(df, 'hanTheDen')
+                elif filters:
+                    st.write(f"🔍 Điều kiện: {' + '.join(filters)}")
                     if not df_result.empty:
-                        if 'hoTen_khongdau' in df_result.columns:
-                            df_result = df_result.drop(columns=['hoTen_khongdau'])
+                        if 'hoTen_khongdau' in df_result.columns: df_result = df_result.drop(columns=['hoTen_khongdau'])
                         hien_thi_uu_tien(df_result)
                     else:
-                        st.warning("Không tìm thấy hồ sơ nào khớp với tất cả điều kiện trên.")
-                
-                # Nếu KHÔNG CÓ điều kiện lọc nào -> Mới kiểm tra lệnh chức năng
+                        st.warning("Không tìm thấy ai.")
                 else:
-                    cmd_clean = xoa_dau_tieng_viet(prompt)
-                    if "bieu do" in cmd_clean:
-                        cot_ve = 'gioiTinh'
-                        if "tinh" in cmd_clean: cot_ve = 'maTinh'
-                        st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
-                        hien_thi_bieu_do(df, cot_ve)
-                    elif "han" in cmd_clean and "het" in cmd_clean: # Phải có chữ 'hết hạn' mới chạy
-                        st.write("⏳ Đang kiểm tra hạn BHYT...")
-                        hien_thi_kiem_tra_han(df, 'hanTheDen')
-                    else:
-                        st.info("🤖 Hãy nhập tên hoặc ngày sinh để tìm kiếm.")
+                    st.info("🤖 Hãy nhập tên hoặc ngày sinh để tìm kiếm.")
 
             except Exception as e:
                 st.error(f"Lỗi xử lý: {e}")
@@ -258,7 +343,7 @@ def main():
         cols = df.columns.tolist()
         idx_sobhxh = cols.index('soBhxh') if 'soBhxh' in cols else 0
         ten_cot = st.sidebar.selectbox("Cột xử lý:", options=cols, index=idx_sobhxh)
-        tim_kiem = st.sidebar.text_input("Tìm kiếm nhanh (Cột đã chọn):", placeholder="Nhập...")
+        tim_kiem = st.sidebar.text_input("Tìm kiếm nhanh:", placeholder="Nhập tên...")
 
         st.sidebar.markdown("---")
         c1, c2 = st.sidebar.columns(2)
@@ -278,8 +363,8 @@ def main():
 
         if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
-        elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df) # Đã cập nhật Logic
+        elif st.session_state.get('bieu'): hien_thi_bieu_do_tuong_tac(df, ten_cot)
+        elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df)
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
