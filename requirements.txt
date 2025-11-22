@@ -4,5 +4,6 @@ openpyxl
 sqlalchemy
 matplotlib
 streamlit-authenticator
+pyxlsb
 
 
