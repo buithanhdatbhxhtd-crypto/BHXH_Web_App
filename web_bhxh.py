@@ -9,7 +9,7 @@ import requests
 import json
 import re
 import unicodedata
-from datetime import datetime, timedelta # <--- Đã bổ sung thư viện này
+from datetime import datetime, timedelta
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -131,10 +131,10 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG CHATBOT THÔNG MINH (LINH HOẠT) ---
+# --- CHATBOT THÔNG MINH (ĐÃ FIX LỖI NHẬN DIỆN SAI) ---
 def hien_thi_chatbot_thong_minh(df):
     st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
-    st.info("💡 Ví dụ: 'lan sinh 12/5/2012', 'tìm hùng', 'vẽ biểu đồ giới tính', 'kiểm tra hạn'")
+    st.info("💡 Bạn cứ nhập tự nhiên: 'Lan 22/01/1988', 'tìm Bùi Thành Đạt', 'số thẻ 12345'")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -143,77 +143,93 @@ def hien_thi_chatbot_thong_minh(df):
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if prompt := st.chat_input("Nhập yêu cầu tra cứu..."):
+    if prompt := st.chat_input("Nhập thông tin cần tìm..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
-            msg_bot = ""
-            prompt_khong_dau = xoa_dau_tieng_viet(prompt)
+            # 1. Chuẩn bị
             df_result = df.copy()
-            # Tạo cột tên không dấu để tìm kiếm
             df_result['hoTen_khongdau'] = df_result['hoTen'].apply(lambda x: xoa_dau_tieng_viet(str(x)))
-            filters = [] 
+            prompt_khong_dau = xoa_dau_tieng_viet(prompt)
+            
+            msg_bot = [] 
+            found_filter = False # Cờ đánh dấu xem có tìm thấy điều kiện lọc nào không
 
             try:
-                # --- LOGIC 1: TÌM NGÀY THÁNG ---
+                # --- BƯỚC 1: ƯU TIÊN TÌM NGÀY THÁNG ---
+                # Tìm chuỗi số/số/số hoặc số-số-số
                 date_match = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', prompt)
                 if date_match:
-                    ngay_raw = date_match.group().replace('-', '/')
+                    ngay_nhap = date_match.group().replace('-', '/')
                     try:
-                        date_obj = pd.to_datetime(ngay_raw, dayfirst=True)
+                        date_obj = pd.to_datetime(ngay_nhap, dayfirst=True)
                         ngay_chuan = date_obj.strftime('%d/%m/%Y')
+                        
+                        # Lọc ngày
                         mask_date = df_result['ngaySinh'].astype(str).str.contains(ngay_chuan)
                         df_result = df_result[mask_date]
-                        filters.append(f"Ngày sinh: **{ngay_chuan}**")
-                        prompt_khong_dau = prompt_khong_dau.replace(xoa_dau_tieng_viet(ngay_raw), "")
+                        
+                        msg_bot.append(f"📅 Ngày sinh: **{ngay_chuan}**")
+                        found_filter = True
+                        
+                        # Xóa ngày khỏi câu lệnh để tránh nhiễu khi tìm tên
+                        prompt_khong_dau = prompt_khong_dau.replace(xoa_dau_tieng_viet(ngay_nhap), "").strip()
                     except: pass
 
-                # --- LOGIC 2: TÌM MÃ SỐ ---
+                # --- BƯỚC 2: TÌM MÃ SỐ ---
                 numbers = re.findall(r'\b\d{5,}\b', prompt)
                 for num in numbers:
                     if date_match and num in date_match.group(): continue
+                    
                     mask_so = (df_result['soBhxh'].astype(str).str.contains(num)) | \
                               (df_result['soCmnd'].astype(str).str.contains(num))
                     df_result = df_result[mask_so]
-                    filters.append(f"Mã số: **{num}**")
-                    prompt_khong_dau = prompt_khong_dau.replace(num, "")
+                    msg_bot.append(f"🔢 Mã số: **{num}**")
+                    found_filter = True
+                    prompt_khong_dau = prompt_khong_dau.replace(num, "").strip()
 
-                # --- LOGIC 3: TÌM TÊN ---
-                tu_khoa_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"]
-                for w in tu_khoa_rac: prompt_khong_dau = re.sub(r'\b' + w + r'\b', '', prompt_khong_dau)
+                # --- BƯỚC 3: TÌM TÊN (PHẦN CÒN LẠI) ---
+                # Xóa từ khóa rác, giữ lại tên
+                tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"]
+                for w in tu_rac:
+                    prompt_khong_dau = re.sub(r'\b' + w + r'\b', '', prompt_khong_dau)
                 
-                ten_can_tim = prompt_khong_dau.strip()
-                # Chỉ tìm tên nếu không phải lệnh vẽ biểu đồ/xem hạn
-                if len(ten_can_tim) > 1 and "bieu do" not in xoa_dau_tieng_viet(prompt) and "han" not in xoa_dau_tieng_viet(prompt):
-                    mask_ten = df_result['hoTen_khongdau'].str.contains(ten_can_tim)
-                    df_result = df_result[mask_ten]
-                    filters.append(f"Tên chứa: **{ten_can_tim}**")
+                # Loại bỏ lệnh chức năng khỏi phần tên để tránh tìm nhầm
+                prompt_khong_dau = re.sub(r'\b(bieu do|thong ke|han|het han)\b', '', prompt_khong_dau)
+                
+                ten_can_tim = re.sub(r'\s+', ' ', prompt_khong_dau).strip()
+                
+                if len(ten_can_tim) > 1: # Tên phải dài hơn 1 ký tự mới tìm
+                    df_result = df_result[df_result['hoTen_khongdau'].str.contains(ten_can_tim)]
+                    msg_bot.append(f"🔤 Tên chứa: **{ten_can_tim}**")
+                    found_filter = True
 
-                # --- TỔNG HỢP KẾT QUẢ ---
-                if "bieu do" in xoa_dau_tieng_viet(prompt):
-                    cot_ve = 'gioiTinh'
-                    if "tinh" in prompt_khong_dau: cot_ve = 'maTinh'
-                    if "huyen" in prompt_khong_dau: cot_ve = 'maHuyen'
-                    st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
-                    hien_thi_bieu_do(df, cot_ve)
-                
-                elif "han" in xoa_dau_tieng_viet(prompt):
-                    st.write("⏳ Đang kiểm tra hạn BHYT...")
-                    hien_thi_kiem_tra_han(df, 'hanTheDen')
-                
-                elif filters:
-                    st.write(f"🔍 Điều kiện: {' + '.join(filters)}")
-                    st.write(f"👉 Kết quả: **{len(df_result)}** hồ sơ.")
+                # --- BƯỚC 4: QUYẾT ĐỊNH HIỂN THỊ ---
+                # Nếu ĐÃ CÓ điều kiện lọc (Tên hoặc Ngày hoặc Mã) -> Ưu tiên hiển thị kết quả tìm kiếm
+                if found_filter:
+                    st.write(f"🔍 Đang lọc theo: {' + '.join(msg_bot)}")
                     if not df_result.empty:
-                        if 'hoTen_khongdau' in df_result.columns: 
+                        if 'hoTen_khongdau' in df_result.columns:
                             df_result = df_result.drop(columns=['hoTen_khongdau'])
-                        hien_thi_uu_tien(df_result) # Dùng hàm hiển thị thẻ đẹp
+                        hien_thi_uu_tien(df_result)
                     else:
-                        st.warning("Không tìm thấy ai.")
+                        st.warning("Không tìm thấy hồ sơ nào khớp với tất cả điều kiện trên.")
+                
+                # Nếu KHÔNG CÓ điều kiện lọc nào -> Mới kiểm tra lệnh chức năng
                 else:
-                    st.info("🤖 Hãy thử: 'Tìm Lan 12/5/2012', 'Vẽ biểu đồ', 'Kiểm tra hạn'")
+                    cmd_clean = xoa_dau_tieng_viet(prompt)
+                    if "bieu do" in cmd_clean:
+                        cot_ve = 'gioiTinh'
+                        if "tinh" in cmd_clean: cot_ve = 'maTinh'
+                        st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
+                        hien_thi_bieu_do(df, cot_ve)
+                    elif "han" in cmd_clean and "het" in cmd_clean: # Phải có chữ 'hết hạn' mới chạy
+                        st.write("⏳ Đang kiểm tra hạn BHYT...")
+                        hien_thi_kiem_tra_han(df, 'hanTheDen')
+                    else:
+                        st.info("🤖 Hãy nhập tên hoặc ngày sinh để tìm kiếm.")
 
             except Exception as e:
                 st.error(f"Lỗi xử lý: {e}")
@@ -263,7 +279,7 @@ def main():
         if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df) # Chatbot thông minh
+        elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df) # Đã cập nhật Logic
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
