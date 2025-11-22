@@ -2,32 +2,34 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
+import bcrypt  # <--- Thêm thư viện này để tạo mã hash trực tiếp
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
 
 def main():
     # =====================================================
-    # BƯỚC 1: LẤY MÃ HASH (Đoạn code tạm thời)
+    # BƯỚC 1: LẤY MÃ HASH (Dùng bcrypt trực tiếp - Ổn định hơn)
     # =====================================================
     st.header("🛠️ Công cụ tạo mã Hash mật khẩu")
-    st.info("Hãy copy chuỗi ký tự bên dưới và dán vào file config.yaml, sau đó xóa đoạn code này đi.")
+    st.info("Hãy copy chuỗi ký tự bắt đầu bằng $2b$... bên dưới và dán vào file config.yaml")
     
-    # Tạo mã hash cho mật khẩu "12345"
-    passwords_to_hash = ['12345']
-    
-    # Lưu ý: Cú pháp này dành cho streamlit-authenticator phiên bản mới
     try:
-        hashed_passwords = stauth.Hasher(passwords_to_hash).generate()
-        st.code(hashed_passwords[0], language='text')
+        # Mật khẩu cần tạo mã
+        mat_khau = "12345"
+        
+        # Tạo mã hash trực tiếp bằng bcrypt
+        hashed_bytes = bcrypt.hashpw(mat_khau.encode(), bcrypt.gensalt())
+        hashed_string = hashed_bytes.decode()
+        
+        st.code(hashed_string, language='text')
     except Exception as e:
         st.error(f"Có lỗi khi tạo hash: {e}")
 
     st.markdown("---")
     # =====================================================
 
-    # --- PHẦN CÒN LẠI CỦA ỨNG DỤNG (Sẽ chạy sau khi có config đúng) ---
-    st.write("Sau khi cập nhật file config.yaml với mã hash trên, ứng dụng sẽ hiển thị màn hình đăng nhập tại đây.")
+    st.write("Sau khi bạn copy mã trên và cập nhật vào file config.yaml, chúng ta sẽ xóa đoạn code tạo mã này đi.")
 
 if __name__ == "__main__":
     main()
