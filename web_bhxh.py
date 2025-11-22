@@ -27,7 +27,7 @@ def set_state(name):
 @st.cache_data
 def nap_du_lieu_tu_csdl():
     # TÊN FILE MỚI: Đuôi .xlsb
-    EXCEL_FILE = 'dữ liệu bhxh.xlsb' 
+    EXCEL_FILE = 'dữ liệu_bhxh.xlsb' 
     
     if not os.path.exists(DB_FILE):
         if not os.path.exists(EXCEL_FILE):
