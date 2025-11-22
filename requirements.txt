@@ -5,8 +5,9 @@ pyxlsb
 plotly
 bcrypt
 pyarrow
+requests
 tabulate
-google-generativeai>=0.7.0
+
 
 
 
