@@ -168,7 +168,8 @@ def hien_thi_tro_ly_ai_lite(df):
                     genai.configure(api_key=API_KEY)
                     
                     # --- SỬA LỖI TẠI ĐÂY: ĐỔI TÊN MODEL ---
-                    model = genai.GenerativeModel('gemini-1.5-flash') 
+                    # Thử dùng bản Pro mạnh mẽ
+model = genai.GenerativeModel('gemini-1.5-pro') 
                     # --------------------------------------
                     
                     response = model.generate_content(context)
