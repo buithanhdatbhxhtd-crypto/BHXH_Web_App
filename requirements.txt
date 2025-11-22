@@ -3,5 +3,6 @@ pandas
 openpyxl
 sqlalchemy
 matplotlib
-streamlit-authenticator==0.3.3
+streamlit-authenticator
+
 
