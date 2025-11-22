@@ -1,177 +1,185 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime, timedelta
 import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
+import google.generativeai as genai # Thư viện AI nhẹ
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
 # --- CẤU HÌNH ---
-# Dùng file .parquet để load siêu nhanh (Cache file)
 PARQUET_FILE = 'data_cache.parquet' 
-EXCEL_FILE = 'aaa.xlsb' # File gốc của bạn
-
+EXCEL_FILE = 'data.xlsb' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
 
 # --- HÀM TẠO CALLBACK ---
 def set_state(name):
-    # Reset các trạng thái khác
     for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai']:
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU TỐI ƯU (DÙNG PARQUET) ---
-@st.cache_data(ttl=3600) # Cache dữ liệu trong 1 giờ để không phải load lại
+# --- HÀM NẠP DỮ LIỆU ---
+@st.cache_data(ttl=3600)
 def nap_du_lieu_toi_uu():
-    # 1. Ưu tiên đọc file Parquet (Siêu nhanh)
     if os.path.exists(PARQUET_FILE):
         try:
             df = pd.read_parquet(PARQUET_FILE)
-            # Đảm bảo các cột quan trọng là dạng chuỗi để tránh lỗi
             cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai']
             for col in cols_to_str:
-                if col in df.columns:
-                    df[col] = df[col].astype(str)
+                if col in df.columns: df[col] = df[col].astype(str)
             return df
-        except Exception:
-            pass # Nếu lỗi file parquet thì đọc lại excel
+        except Exception: pass
 
-    # 2. Nếu chưa có Parquet, đọc Excel (Lần đầu sẽ chậm)
     if not os.path.exists(EXCEL_FILE):
-        st.error(f"❌ Không tìm thấy file dữ liệu gốc: {EXCEL_FILE}")
+        st.error(f"❌ Không tìm thấy file: {EXCEL_FILE}")
         return pd.DataFrame()
     
     try:
-        with st.spinner('⚙️ Đang tối ưu hóa dữ liệu lần đầu (Chuyển sang Parquet)... Vui lòng đợi...'):
-            # Đọc file .xlsb
+        with st.spinner('⚙️ Đang tối ưu hóa dữ liệu...'):
             df = pd.read_excel(EXCEL_FILE, dtype=str, engine='pyxlsb')
             df.columns = df.columns.str.strip()
-            
-            # Lưu lại thành Parquet để lần sau chạy nhanh hơn
             df.to_parquet(PARQUET_FILE)
-            st.toast("✅ Đã tạo bộ nhớ đệm siêu tốc!", icon="🚀")
-            
         return df
     except Exception as e:
-        st.error(f"❌ Lỗi đọc file Excel: {e}")
+        st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ ---
+# --- CÁC HÀM HIỂN THỊ CƠ BẢN ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
-        st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
+        st.warning("😞 Không tìm thấy hồ sơ.")
         return
-    st.success(f"✅ Đã tìm thấy {len(df_ket_qua)} hồ sơ!")
+    st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
-    # Chỉ hiển thị tối đa 50 kết quả để tránh lag trình duyệt
     hien_thi_max = 50
     if len(df_ket_qua) > hien_thi_max:
-        st.warning(f"⚠️ Chỉ hiển thị {hien_thi_max} kết quả đầu tiên để đảm bảo tốc độ.")
+        st.warning(f"⚠️ Chỉ hiện {hien_thi_max} kết quả đầu để mượt.")
         df_ket_qua = df_ket_qua.head(hien_thi_max)
 
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
-        tieu_de = f"👤 HỒ SƠ: {row.get('hoTen', 'Không tên')} - {row.get('soBhxh', '')}"
-        with st.expander(tieu_de, expanded=False): # expanded=False để đóng bớt cho gọn
+        tieu_de = f"👤 HỒ SƠ: {row.get('hoTen', 'Na')} - {row.get('soBhxh', '')}"
+        with st.expander(tieu_de, expanded=False):
             c1, c2 = st.columns(2)
-            for idx, cot_uu_tien in enumerate(COT_UU_TIEN):
-                gia_tri = "(Trống)"
-                for col_excel in df_ket_qua.columns:
-                     if cot_uu_tien.lower() == col_excel.lower():
-                         val = row[col_excel]
-                         if pd.notna(val) and str(val).strip() != "" and str(val).lower() != "nan":
-                             gia_tri = str(val)
+            for idx, cot in enumerate(COT_UU_TIEN):
+                val = "(Trống)"
+                for c_ex in df_ket_qua.columns:
+                     if cot.lower() == c_ex.lower():
+                         v = row[c_ex]
+                         if pd.notna(v) and str(v).strip() != "" and str(v).lower() != "nan": val = str(v)
                          break
-                noi_dung = f"**🔹 {cot_uu_tien}:** {gia_tri}"
-                if idx % 2 == 0: c1.markdown(noi_dung)
-                else: c2.markdown(noi_dung)
-            st.markdown("---")
-            st.caption("Dữ liệu gốc:")
+                if idx % 2 == 0: c1.markdown(f"**🔹 {cot}:** {val}")
+                else: c2.markdown(f"**🔹 {cot}:** {val}")
+            st.caption("Gốc:")
             st.dataframe(row.to_frame().T, hide_index=True)
 
 def hien_thi_loc_loi(df, ten_cot):
-    if ten_cot not in df.columns:
-        st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
-        return
-    col_chuan_hoa = df[ten_cot].astype(str).str.strip().str.lower()
-    gia_tri_rong = ['nan', 'none', 'null', '', '0']
-    df_loc = df[col_chuan_hoa.isin(gia_tri_rong)]
+    col_chuan = df[ten_cot].astype(str).str.strip().str.lower()
+    rong = ['nan', 'none', 'null', '', '0']
+    df_loc = df[col_chuan.isin(rong)]
     if not df_loc.empty:
-        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu cột '{ten_cot}'.")
-        st.dataframe(df_loc.head(1000)) # Chỉ hiện 1000 dòng lỗi đầu tiên
+        st.warning(f"⚠️ {len(df_loc)} hồ sơ thiếu '{ten_cot}'.")
+        st.dataframe(df_loc.head(1000))
     else:
-        st.success(f"Tuyệt vời! Cột '{ten_cot}' đầy đủ dữ liệu.")
+        st.success(f"Tuyệt vời! Cột '{ten_cot}' đủ dữ liệu.")
 
 def hien_thi_kiem_tra_han(df, ten_cot_ngay):
-    if ten_cot_ngay not in df.columns:
-        st.error(f"❌ Không tìm thấy cột: '{ten_cot_ngay}'.")
-        return
-    
-    # Xử lý trên bản sao nhẹ hơn
     df_temp = df[[ten_cot_ngay, 'hoTen', 'soBhxh']].copy()
-    
     try:
         df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
-        df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
+        df_co = df_temp.dropna(subset=[ten_cot_ngay])
         hom_nay = datetime.now()
-        sau_30_ngay = hom_nay + timedelta(days=30)
+        sau_30 = hom_nay + timedelta(days=30)
         
-        ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay].copy()
-        ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)].copy()
+        ds_het = df_co[df_co[ten_cot_ngay] < hom_nay].copy()
+        ds_sap = df_co[(df_co[ten_cot_ngay] >= hom_nay) & (df_co[ten_cot_ngay] <= sau_30)].copy()
         
-        if not ds_da_het_han.empty:
-            ds_da_het_han[ten_cot_ngay] = ds_da_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
-        if not ds_sap_het_han.empty:
-            ds_sap_het_han[ten_cot_ngay] = ds_sap_het_han[ten_cot_ngay].dt.strftime('%d/%m/%Y')
+        if not ds_het.empty: ds_het[ten_cot_ngay] = ds_het[ten_cot_ngay].dt.strftime('%d/%m/%Y')
+        if not ds_sap.empty: ds_sap[ten_cot_ngay] = ds_sap[ten_cot_ngay].dt.strftime('%d/%m/%Y')
 
-        st.markdown("### ⏳ KẾT QUẢ KIỂM TRA HẠN")
-        col1, col2 = st.columns(2)
-        col1.metric(label="🔴 ĐÃ HẾT HẠN", value=f"{len(ds_da_het_han)} người")
-        col2.metric(label="⚠️ SẮP HẾT HẠN (30 ngày)", value=f"{len(ds_sap_het_han)} người")
+        c1, c2 = st.columns(2)
+        c1.metric("🔴 ĐÃ HẾT HẠN", f"{len(ds_het)}")
+        c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
         
-        if not ds_da_het_han.empty:
-            st.subheader("🔴 Danh sách đã Hết Hạn (Top 500)")
-            st.dataframe(ds_da_het_han.head(500), hide_index=True)
-        if not ds_sap_het_han.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết Hạn (Top 500)")
-            st.dataframe(ds_sap_het_han.head(500), hide_index=True)
-    except Exception as e:
-        st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
+        if not ds_het.empty:
+            st.subheader("🔴 Danh sách Hết Hạn (Top 500)")
+            st.dataframe(ds_het.head(500), hide_index=True)
+        if not ds_sap.empty:
+            st.subheader("⚠️ Danh sách Sắp Hết (Top 500)")
+            st.dataframe(ds_sap.head(500), hide_index=True)
+    except Exception as e: st.error(f"Lỗi ngày tháng: {e}")
 
 def hien_thi_bieu_do(df, ten_cot):
-    if ten_cot not in df.columns:
-        st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
-        return
-    st.markdown(f"### 📊 BIỂU ĐỒ THỐNG KÊ: {ten_cot}")
-    
-    # Giới hạn số lượng nhóm để biểu đồ không bị đơ nếu quá nhiều loại
+    st.markdown(f"### 📊 BIỂU ĐỒ: {ten_cot}")
     thong_ke = df[ten_cot].value_counts().head(20).reset_index()
-    thong_ke.columns = ['Phân loại', 'Số lượng'] 
-    
-    fig = px.bar(thong_ke, x='Phân loại', y='Số lượng', text='Số lượng', color='Phân loại', title=f"Top 20 phân loại theo {ten_cot}")
+    thong_ke.columns = ['Loại', 'Số lượng'] 
+    fig = px.bar(thong_ke, x='Loại', y='Số lượng', text='Số lượng', color='Loại')
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- PHẦN CHÍNH (MAIN) ---
+# --- CHỨC NĂNG MỚI: AI LITE (KHÔNG TREO MÁY) ---
+def hien_thi_tro_ly_ai_lite(df):
+    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ)")
+    st.info("💡 AI này trả lời dựa trên cấu trúc và 10 dòng dữ liệu mẫu. Nó rất nhanh và không làm treo máy.")
+
+    # 1. Cấu hình API Key
+    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" 
+
+    if API_KEY == "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550":
+        st.warning("⚠️ Vui lòng điền API Key vào code.")
+        return
+
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if prompt := st.chat_input("Hỏi gì đó..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            with st.spinner("AI đang đọc dữ liệu mẫu..."):
+                try:
+                    # Tạo ngữ cảnh dữ liệu (Chỉ lấy 10 dòng đầu để nhẹ máy)
+                    data_sample = df.head(10).to_markdown(index=False)
+                    columns_info = ", ".join(df.columns.tolist())
+                    total_rows = len(df)
+                    
+                    # Câu lệnh gửi cho AI
+                    context = f"""
+                    Bạn là trợ lý phân tích dữ liệu BHXH. Dưới đây là thông tin về bộ dữ liệu:
+                    - Tổng số dòng: {total_rows}
+                    - Các cột: {columns_info}
+                    - Dữ liệu mẫu (10 dòng đầu):
+                    {data_sample}
+                    
+                    Người dùng hỏi: "{prompt}"
+                    Hãy trả lời ngắn gọn, súc tích dựa trên thông tin trên. Nếu câu hỏi cần tính toán trên toàn bộ {total_rows} dòng, hãy giải thích cách làm hoặc đưa ra dự đoán dựa trên mẫu.
+                    """
+                    
+                    genai.configure(api_key=API_KEY)
+                    model = genai.GenerativeModel('gemini-pro')
+                    response = model.generate_content(context)
+                    
+                    st.write(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                except Exception as e:
+                    st.error(f"Lỗi kết nối AI: {e}")
+
+# --- MAIN ---
 def main():
-    # 1. ĐĂNG NHẬP
-    mat_khau_raw = "12345"
-    hashed_pw = bcrypt.hashpw(mat_khau_raw.encode(), bcrypt.gensalt()).decode()
+    # Mật khẩu 12345
+    hashed_pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
+    credentials = {'usernames': {'bhxh_admin': {'name': 'Admin BHXH', 'email': 'a@b.c', 'password': hashed_pw}}}
+    cookie = {'name': 'bhxh_cookie', 'key': 'key_dai_ngoang', 'expiry_days': 30}
     
-    credentials = {
-        'usernames': {
-            'bhxh_admin': {
-                'name': 'Admin BHXH',
-                'email': 'admin@bhxh.vn',
-                'password': hashed_pw 
-            }
-        }
-    }
-    cookie = {'name': 'bhxh_cookie', 'key': 'key_bao_mat_rat_dai', 'expiry_days': 30}
     authenticator = stauth.Authenticate(credentials, cookie['name'], cookie['key'], cookie['expiry_days'])
     authenticator.login(location='main')
 
@@ -182,25 +190,15 @@ def main():
             st.markdown("---")
         
         st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH (Turbo Mode 🚀)")
-        
-        # Load dữ liệu tối ưu
         df = nap_du_lieu_toi_uu()
         
-        if df.empty:
-            st.info("Đang chờ dữ liệu...")
-            return 
+        if df.empty: return 
 
-        # Sidebar chức năng
         st.sidebar.header("CHỨC NĂNG")
-        danh_sach_cot = df.columns.tolist()
-        
-        # Chọn cột thông minh (ưu tiên soBhxh)
-        idx_sobhxh = 0
-        if 'soBhxh' in danh_sach_cot:
-            idx_sobhxh = danh_sach_cot.index('soBhxh')
-            
-        ten_cot = st.sidebar.selectbox("Cột tra cứu/xử lý:", options=danh_sach_cot, index=idx_sobhxh)
-        gia_tri_tim = st.sidebar.text_input("Từ khóa tìm kiếm:", placeholder="Ví dụ: Nguyễn Văn A")
+        cols = df.columns.tolist()
+        idx_sobhxh = cols.index('soBhxh') if 'soBhxh' in cols else 0
+        ten_cot = st.sidebar.selectbox("Cột xử lý:", options=cols, index=idx_sobhxh)
+        tim_kiem = st.sidebar.text_input("Tìm kiếm:", placeholder="Nhập tên...")
 
         st.sidebar.markdown("---")
         c1, c2 = st.sidebar.columns(2)
@@ -211,32 +209,28 @@ def main():
         c3.button("⏳ HẠN BHYT", on_click=set_state, args=('han',))
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         
-        # Logic hiển thị
+        st.sidebar.markdown("---")
+        # Nút AI đã quay lại!
+        st.sidebar.button("🤖 TRỢ LÝ AI", on_click=set_state, args=('ai',))
+
         st.markdown("---")
-        for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai']:
+        for key in ['search', 'loc', 'han', 'bieu', 'ai']:
             if key not in st.session_state: st.session_state[key] = False
 
-        if st.session_state.get('loc'):
-            hien_thi_loc_loi(df, ten_cot)
-        elif st.session_state.get('han'):
-            hien_thi_kiem_tra_han(df, ten_cot)
-        elif st.session_state.get('bieu'):
-            hien_thi_bieu_do(df, ten_cot)
-        elif gia_tri_tim:
-            # Tìm kiếm tối ưu: Chuyển về chuỗi và tìm
-            mask = df[ten_cot].astype(str).str.contains(gia_tri_tim, case=False, na=False)
-            df_tra_cuu = df[mask]
-            hien_thi_uu_tien(df_tra_cuu)
+        if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
+        elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
+        elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
+        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df) # Gọi hàm AI Lite
+        elif tim_kiem:
+            mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
+            hien_thi_uu_tien(df[mask])
         else:
-            st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa.")
-            # Không hiển thị toàn bộ 100k dòng để tránh lag, chỉ hiện top 10
-            st.caption("Dữ liệu mẫu (10 dòng đầu):")
+            st.info("👈 Chọn chức năng bên trái.")
+            st.caption("Dữ liệu mẫu:")
             st.dataframe(df.head(10))
 
-    elif st.session_state["authentication_status"] is False:
-        st.error('Tên đăng nhập hoặc mật khẩu không đúng.')
-    elif st.session_state["authentication_status"] is None:
-        st.warning('Vui lòng đăng nhập để tiếp tục.')
+    elif st.session_state["authentication_status"] is False: st.error('Sai mật khẩu.')
+    elif st.session_state["authentication_status"] is None: st.warning('Vui lòng đăng nhập.')
 
 if __name__ == "__main__":
     main()
