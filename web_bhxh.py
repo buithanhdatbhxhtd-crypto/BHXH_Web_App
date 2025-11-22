@@ -121,20 +121,23 @@ def hien_thi_bieu_do(df, ten_cot):
 
 # --- CHỨC NĂNG AI: NHẬP KEY TRỰC TIẾP ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Gemini)")
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini Pro)")
     
     # --- Ô NHẬP KEY TRỰC TIẾP ---
-    api_key_input = st.text_input("🔑 Nhập Google API Key của bạn vào đây:", type="password", help="Lấy key tại aistudio.google.com")
+    api_key_input = st.text_input("🔑 Nhập Google API Key của bạn vào đây:", type="password")
     
     if not api_key_input:
-        st.info("👈 Vui lòng dán API Key để bắt đầu chat.")
-        st.markdown("[👉 Bấm vào đây để lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
+        st.info("👈 Vui lòng dán API Key để bắt đầu.")
         return
 
-    # Cấu hình Gemini với Key người dùng nhập
+    # Cấu hình Gemini
     try:
         genai.configure(api_key=api_key_input)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # --- THAY ĐỔI QUAN TRỌNG: DÙNG MODEL CŨ NHƯNG ỔN ĐỊNH ---
+        model = genai.GenerativeModel('gemini-pro') 
+        # -------------------------------------------------------
+        
     except Exception as e:
         st.error(f"Key không hợp lệ: {e}")
         return
@@ -159,21 +162,19 @@ def hien_thi_tro_ly_ai_lite(df):
                     total_rows = len(df)
                     
                     context = f"""
-                    Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                    - Tổng số dòng: {total_rows}
-                    - Các cột: {columns_info}
-                    - Dữ liệu mẫu (10 dòng đầu):
+                    Dữ liệu BHXH (Tổng: {total_rows} dòng). Các cột: {columns_info}.
+                    Mẫu 10 dòng đầu:
                     {data_sample}
                     
-                    Câu hỏi người dùng: "{prompt}"
-                    Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
+                    Câu hỏi: "{prompt}"
+                    Trả lời ngắn gọn tiếng Việt.
                     """
                     
                     response = model.generate_content(context)
                     st.write(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                 except Exception as e:
-                    st.error(f"Lỗi kết nối (Kiểm tra lại Key): {e}")
+                    st.error(f"Lỗi kết nối: {e}")
 
 # --- MAIN ---
 def main():
