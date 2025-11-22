@@ -206,9 +206,9 @@ if authentication_status:
             st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa bên trái.")
             st.dataframe(df.head())
 
-    elif authentication_status is False:
+elif authentication_status is False:
         st.error('Tên đăng nhập hoặc mật khẩu không đúng.')
-    elif authentication_status is None:
+elif authentication_status is None:
         st.warning('Vui lòng đăng nhập để tiếp tục.')
 
 if __name__ == "__main__":
