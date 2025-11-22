@@ -5,5 +5,6 @@ sqlalchemy
 matplotlib
 streamlit-authenticator
 pyxlsb
+plotly
 
 
