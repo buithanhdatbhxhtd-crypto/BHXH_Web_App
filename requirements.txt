@@ -1,11 +1,11 @@
 streamlit
 pandas
-openpyxl
-sqlalchemy
-matplotlib
 streamlit-authenticator
 pyxlsb
 plotly
+bcrypt
+pyarrow
+
 
 
 
