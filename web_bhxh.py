@@ -147,7 +147,7 @@ def main():
     name, authentication_status, username = authenticator.login('Đăng nhập', 'main')
 
     # 4. Xử lý sau đăng nhập
-if authentication_status:
+    if authentication_status:
         # --- GIAO DIỆN CHÍNH SAU KHI ĐĂNG NHẬP ---
         with st.sidebar:
             st.write(f'Xin chào, **{name}**! 👋')
@@ -206,9 +206,9 @@ if authentication_status:
             st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa bên trái.")
             st.dataframe(df.head())
 
-elif authentication_status is False:
+    elif authentication_status is False:
         st.error('Tên đăng nhập hoặc mật khẩu không đúng.')
-elif authentication_status is None:
+    elif authentication_status is None:
         st.warning('Vui lòng đăng nhập để tiếp tục.')
 
 if __name__ == "__main__":
