@@ -3,15 +3,15 @@ credentials:
     bhxh_admin:
       email: admin@bhxh.vn
       name: Nguyễn Văn A (Admin)
-      # Mật khẩu đã mã hóa sẵn cho '12345'
-      password: $2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x
+      # Dán chuỗi mã hash mới của bạn vào đây 👇
+      password: $2b$12$269eQJN7qvjvAoySPnRw30adK8fi2h64g65VYpNr6/N9AlzGW8Gim
     bhxh_user:
       email: user@bhxh.vn
       name: Lê Thị B (User)
-      password: $2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x
+      # Dán cùng chuỗi đó vào đây (nếu muốn cả 2 dùng chung mật khẩu 12345) 👇
+      password: $2b$12$269eQJN7qvjvAoySPnRw30adK8fi2h64g65VYpNr6/N9AlzGW8Gim
 
 cookie:
   expiry_days: 30
-  # Chuỗi Key dài và ngẫu nhiên để tránh lỗi
   key: f6a4b1c9d2e70f3a5b8c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a 
   name: bhxh_cookie_app
