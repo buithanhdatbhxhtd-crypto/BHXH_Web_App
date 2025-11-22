@@ -33,7 +33,8 @@ CONFIG = {
     },
     'cookie': {
         'expiry_days': 30,
-        'key': 'chuoi_ngau_nhien_bhxh_2025_key_security', 
+        # CHUỖI KEY ĐÃ KHẮC PHỤC LỖI VALUEERROR - RẤT DÀI VÀ NGẪU NHIÊN
+        'key': 'f6a4b1c9d2e70f3a5b8c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a', 
         'name': 'bhxh_cookie_app'
     }
 }
@@ -87,7 +88,7 @@ def nap_du_lieu_tu_csdl():
     except Exception:
         return pd.DataFrame()
 
-# --- HÀM XUẤT KẾT QUẢ ƯU TIÊN ---
+# --- CÁC HÀM HIỂN THỊ KHÁC (GIỮ NGUYÊN) ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
@@ -110,7 +111,6 @@ def hien_thi_uu_tien(df_ket_qua):
             st.markdown("---")
             st.dataframe(row.to_frame().T)
 
-# --- HÀM LỌC DỮ LIỆU LỖI/TRỐNG ---
 def hien_thi_loc_loi(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
@@ -124,7 +124,6 @@ def hien_thi_loc_loi(df, ten_cot):
     else:
         st.success(f"Tuyệt vời! Cột '{ten_cot}' đầy đủ dữ liệu.")
 
-# --- HÀM KIỂM TRA HẠN BHYT ---
 def hien_thi_kiem_tra_han(df, ten_cot_ngay):
     if ten_cot_ngay not in df.columns:
         st.error(f"❌ Không tìm thấy cột Ngày Hết Hạn: '{ten_cot_ngay}'.")
