@@ -6,6 +6,7 @@ plotly
 bcrypt
 pyarrow
 google-generativeai
+tabulate
 
 
 
