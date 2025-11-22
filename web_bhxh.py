@@ -44,14 +44,12 @@ def hien_thi_nhat_ky_he_thong(user_config):
         df_log = pd.read_csv(LOG_FILE)
         df_log = df_log.sort_values(by='Thời gian', ascending=False)
         
-        # Thêm logic lọc theo người dùng
         user_list = ['Tất cả người dùng'] + list(user_config['usernames'].keys())
         selected_user = st.selectbox("Chọn người dùng để xem nhật ký:", user_list)
         
         df_display = df_log.copy()
         
         if selected_user != 'Tất cả người dùng':
-            # Lọc dataframe chỉ giữ lại hoạt động của user được chọn
             df_display = df_log[df_log['Người dùng'] == selected_user]
             st.info(f"Đang hiển thị nhật ký của: **{selected_user}** ({len(df_display)} hoạt động).")
         else:
@@ -188,7 +186,6 @@ def hien_thi_quan_ly_user(config):
 def hien_thi_quan_tri_admin(config):
     st.markdown("### ⚙️ TRUNG TÂM QUẢN TRỊ")
     
-    # 1. Hiển thị các nút chức năng quản trị
     st.markdown("#### Quản lý Người dùng")
     col_u1, col_u2 = st.columns(2)
     col_u1.button("👥 QUẢN LÝ USER", on_click=set_state, args=('admin_user',))
@@ -199,10 +196,9 @@ def hien_thi_quan_tri_admin(config):
     
     st.divider()
 
-    # 2. Xử lý logic hiển thị
     if st.session_state.get('admin_user'): hien_thi_quan_ly_user(config)
     elif st.session_state.get('admin_data'): hien_thi_quan_tri_data()
-    elif st.session_state.get('admin_log'): hien_thi_nhat_ky_he_thong(config) # Truyền config vào
+    elif st.session_state.get('admin_log'): hien_thi_nhat_ky_he_thong(config)
     else: st.info("Chọn một chức năng quản trị bên trên.")
 
 # --- HÀM HỖ TRỢ & NẠP DỮ LIỆU (GIỮ NGUYÊN) ---
@@ -295,8 +291,7 @@ def hien_thi_uu_tien(df_ket_qua):
             st.dataframe(row.to_frame().T, hide_index=True)
 
 def hien_thi_loc_loi(df, ten_cot):
-    log_action(st.session_state["username"], "Lọc Lỗi", f"Cột: {ten_cot}")
-    col_chuan = df[ten_cot].astype(str).str.strip().str.lower(); rong = ['nan', 'none', 'null', '', '0']; df_loc = df[col_chuan.isin(rong)]
+    log_action(st.session_state["username"], "Lọc Lỗi", f"Cột: {ten_cot}"); col_chuan = df[ten_cot].astype(str).str.strip().str.lower(); rong = ['nan', 'none', 'null', '', '0']; df_loc = df[col_chuan.isin(rong)]
     if not df_loc.empty:
         st.warning(f"⚠️ {len(df_loc)} hồ sơ thiếu '{ten_cot}'."); excel_data = tao_file_excel(df_loc)
         st.download_button(label="📥 Tải danh sách lỗi", data=excel_data.getvalue(), file_name=f"loi_{ten_cot}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"); st.dataframe(df_loc.head(1000))
@@ -329,7 +324,10 @@ def hien_thi_bieu_do_tuong_tac(df, ten_cot):
 def hien_thi_chatbot_thong_minh(df):
     log_action(st.session_state["username"], "Xem Chatbot", ""); st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
     if "messages" not in st.session_state: st.session_state.messages = []
-    for msg in st.session_state.messages: with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    for msg in st.session_state.messages: 
+        # FIX: Dòng lỗi (line 332) đã được sửa lại cú pháp (with/as) chuẩn
+        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        
     if prompt := st.chat_input("Nhập yêu cầu..."):
         st.session_state.messages.append({"role": "user", "content": prompt}); with st.chat_message("user"): st.markdown(prompt); log_action(st.session_state["username"], "Chat AI", prompt)
         with st.chat_message("assistant"):
@@ -339,7 +337,7 @@ def hien_thi_chatbot_thong_minh(df):
                 if date_m:
                     ngay_raw = date_m.group().replace('-', '/');
                     try:
-                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y'); mask_date = df_res['ngaySinh'].astype(str).str.contains(nd); df_res = df_res[mask_date]; filters.append(f"Ngày sinh: **{nd}**")
+                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y'); mask_date = df_res['ngaySinh'].astype(str).str.contains(nd); df_res = df_res[mask_date]; filters.append(f"Ngày sinh: **{nd}**");
                     except: pass
                 nums = re.findall(r'\b\d{5,}\b', prompt);
                 for n in nums:
@@ -431,7 +429,7 @@ def main():
         elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df)
         elif st.session_state.get('admin_data') and user_role == 'admin': hien_thi_quan_tri_data()
         elif st.session_state.get('admin_user') and user_role == 'admin': hien_thi_quan_ly_user(user_config)
-        elif st.session_state.get('admin_log') and user_role == 'admin': hien_thi_nhat_ky_he_thong(user_config) # Đã truyền user_config vào
+        elif st.session_state.get('admin_log') and user_role == 'admin': hien_thi_nhat_ky_he_thong(user_config)
         
         elif tim_kiem:
             log_action(username, "Tìm kiếm nhanh", f"Từ khóa: {tim_kiem} (Cột: {ten_cot})")
