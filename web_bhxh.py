@@ -121,27 +121,44 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GỌI TRỰC TIẾP (GEMINI-PRO) ---
-def call_gemini_direct(api_key, prompt):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+# --- CHỨC NĂNG AI: CƠ CHẾ TỰ ĐỘNG TÌM MODEL (FIX DỨT ĐIỂM) ---
+def call_gemini_smart(api_key, prompt):
+    # Danh sách các model sẽ thử lần lượt
+    models_to_try = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"]
+    
     headers = {'Content-Type': 'application/json'}
     data = {
         "contents": [{
             "parts": [{"text": prompt}]
         }]
     }
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
-        if response.status_code == 200:
-            return response.json()['candidates'][0]['content']['parts'][0]['text']
-        else:
-            return f"Lỗi từ Google: {response.text}"
-    except Exception as e:
-        return f"Lỗi kết nối: {str(e)}"
+    
+    # Thử từng model
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        try:
+            response = requests.post(url, headers=headers, data=json.dumps(data))
+            
+            # Nếu thành công (200 OK) -> Trả về kết quả ngay
+            if response.status_code == 200:
+                return response.json()['candidates'][0]['content']['parts'][0]['text']
+            
+            # Nếu lỗi 404 (Không tìm thấy model) -> Bỏ qua, thử model tiếp theo
+            elif response.status_code == 404:
+                continue 
+                
+            # Nếu lỗi khác (ví dụ sai Key) -> Báo lỗi ngay
+            else:
+                return f"Lỗi từ Google ({model_name}): {response.text}"
+                
+        except Exception as e:
+            continue # Lỗi mạng thì thử cái tiếp theo
+
+    return "Xin lỗi, hệ thống đã thử tất cả các phiên bản AI nhưng đều thất bại. Vui lòng kiểm tra lại API Key của bạn."
 
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Ổn định)")
-    st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ & Thông Minh)")
+    st.info("💡 AI sẽ tự động chọn phiên bản tốt nhất để trả lời bạn.")
 
     # API Key CỦA BẠN (Đã điền sẵn)
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
@@ -160,10 +177,8 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                # --- SỬA LỖI TẠI ĐÂY: Dùng to_string() thay vì to_markdown() ---
+                # Chuẩn bị dữ liệu (Dùng to_string để tránh lỗi tabulate)
                 data_sample = df.head(10).to_string(index=False)
-                # -------------------------------------------------------------
-                
                 columns_info = ", ".join(df.columns.tolist())
                 total_rows = len(df)
                 
@@ -175,10 +190,11 @@ def hien_thi_tro_ly_ai_lite(df):
                 {data_sample}
                 
                 Câu hỏi người dùng: "{prompt}"
-                Hãy trả lời ngắn gọn, hữu ích dựa trên thông tin trên.
+                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
                 """
                 
-                tra_loi = call_gemini_direct(API_KEY, context)
+                # Gọi hàm thông minh mới
+                tra_loi = call_gemini_smart(API_KEY, context)
                 
                 st.write(tra_loi)
                 st.session_state.messages.append({"role": "assistant", "content": tra_loi})
