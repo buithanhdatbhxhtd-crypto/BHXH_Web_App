@@ -18,7 +18,7 @@ from docx.shared import Pt, RGBColor
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH FILE (ĐÃ SỬA LỖI NAMEERROR) ---
+# --- CẤU HÌNH FILE ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
 USER_DB_FILE = 'users.json' 
@@ -306,8 +306,7 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         ds_sap = df_co[(df_co[ten_cot_ngay] >= hom_nay) & (df_co[ten_cot_ngay] <= sau_30)].copy()
         if not ds_het.empty: ds_het[ten_cot_ngay] = ds_het[ten_cot_ngay].dt.strftime('%d/%m/%Y')
         if not ds_sap.empty: ds_sap[ten_cot_ngay] = ds_sap[ten_cot_ngay].dt.strftime('%d/%m/%Y')
-        c1, c2 = st.columns(2); c1.metric("🔴 ĐÃ HẾT HẠN", f"{len(ds_het)}")
-        c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
+        c1, c2 = st.columns(2); c1.metric("🔴 ĐÃ HẾT HẠN", f"{len(ds_het)}"); c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
         if not ds_het.empty:
             st.subheader("🔴 Danh sách Hết Hạn"); excel_het = tao_file_excel(ds_het); st.download_button("📥 Tải Hết Hạn", excel_het.getvalue(), "het_han.xlsx"); st.dataframe(ds_het.head(500), hide_index=True)
         if not ds_sap.empty:
@@ -327,7 +326,7 @@ def hien_thi_chatbot_thong_minh(df):
     log_action(st.session_state["username"], "Xem Chatbot", ""); st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
     if "messages" not in st.session_state: st.session_state.messages = []
     for msg in st.session_state.messages: 
-        with st.chat_message(msg["role"]): st.markdown(msg["content"]) # FIX: Dòng này đã được ngắt xuống cho đúng cú pháp
+        with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
     if prompt := st.chat_input("Nhập yêu cầu..."):
         st.session_state.messages.append({"role": "user", "content": prompt}); with st.chat_message("user"): st.markdown(prompt); log_action(st.session_state["username"], "Chat AI", prompt)
@@ -394,7 +393,7 @@ def main():
         if df.empty:
             st.warning("⚠️ Chưa có dữ liệu.")
             if user_role == 'admin':
-                st.sidebar.button("⚙️ QUẢN TRỊ DATA", on_click=set_state, args=('admin_data',))
+                st.sidebar.button("⚙️ CẬP NHẬT DATA", on_click=set_state, args=('admin_data',))
                 if st.session_state.get('admin_data'): hien_thi_quan_tri_data()
             return
 
