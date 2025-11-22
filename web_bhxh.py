@@ -5,12 +5,12 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai # Dùng thư viện chính hãng
+import google.generativeai as genai 
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH ---
+# --- CẤU HÌNH FILE ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
@@ -120,19 +120,20 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: DÙNG GEMINI 1.5 FLASH (BẢN MỚI NHẤT) ---
+# --- CHỨC NĂNG AI: GEMINI FLASH (Đã gắn Key Mới) ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Google Gemini)")
-    st.info("💡 Hãy dán API Key mới của bạn vào code để sử dụng.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
+    st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
 
-    # ============================================================
-    # 👇 DÁN KEY MỚI CỦA BẠN VÀO GIỮA HAI DẤU NGOẶC KÉP DƯỚI ĐÂY 👇
-    api_key = "AIzaSyD_xAx2MfvRsdHmW_wFAKjN0UyWWdLBJ9g" 
-    # ============================================================
+    # API Key MỚI CỦA BẠN
+    API_KEY = "AIzaSyD_xAx2MfvRsdHmW_wFAKjN0UyWwdLBJ9g" 
 
-    if not api_key or "DÁN_KEY" in api_key:
-        st.warning("⚠️ Vui lòng tạo API Key mới tại aistudio.google.com và dán vào code.")
-        st.markdown("[👉 Bấm vào đây để lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
+    # Cấu hình Gemini
+    try:
+        genai.configure(api_key=API_KEY)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+    except Exception as e:
+        st.error(f"Lỗi cấu hình AI: {e}")
         return
 
     if "messages" not in st.session_state:
@@ -150,37 +151,29 @@ def hien_thi_tro_ly_ai_lite(df):
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
                 try:
-                    # Cấu hình AI
-                    genai.configure(api_key=api_key)
-                    # Dùng model chuẩn 1.5 Flash
-                    model = genai.GenerativeModel('gemini-1.5-flash')
-                    
-                    # Chuẩn bị dữ liệu
                     data_sample = df.head(10).to_string(index=False)
+                    columns_info = ", ".join(df.columns.tolist())
                     total_rows = len(df)
-                    cols_info = ", ".join(df.columns)
                     
                     context = f"""
-                    Bạn là chuyên gia phân tích dữ liệu BHXH.
-                    Dữ liệu có {total_rows} dòng. Các cột: {cols_info}.
-                    Dữ liệu mẫu:
+                    Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
+                    - Tổng số dòng: {total_rows}
+                    - Các cột: {columns_info}
+                    - Dữ liệu mẫu (10 dòng đầu):
                     {data_sample}
                     
-                    Người dùng hỏi: "{prompt}"
-                    Trả lời ngắn gọn, súc tích bằng tiếng Việt.
+                    Câu hỏi người dùng: "{prompt}"
+                    Hãy trả lời ngắn gọn bằng tiếng Việt.
                     """
                     
                     response = model.generate_content(context)
                     st.write(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
-                    
                 except Exception as e:
                     st.error(f"Lỗi kết nối: {e}")
-                    st.info("💡 Gợi ý: Key của bạn có thể chưa bật quyền truy cập. Hãy thử tạo Key mới ở 'Project' khác trên Google AI Studio.")
 
 # --- MAIN ---
 def main():
-    # Mật khẩu 12345
     hashed_pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
     credentials = {'usernames': {'bhxh_admin': {'name': 'Admin BHXH', 'email': 'a@b.c', 'password': hashed_pw}}}
     cookie = {'name': 'bhxh_cookie', 'key': 'key_dai_ngoang', 'expiry_days': 30}
