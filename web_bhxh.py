@@ -1,23 +1,20 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-from sqlalchemy import create_engine
 import os
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-from pandasai import SmartDataframe
-from pandasai.llm import GoogleGemini
 
 # --- CẤU HÌNH TRANG ---
-st.set_page_config(page_title="BHXH Web Manager", layout="wide")
+st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH CSDL ---
-DB_FILE = 'bhxh.db'
-TEN_BANG = 'ho_so_tham_gia'
+# --- CẤU HÌNH ---
+# Dùng file .parquet để load siêu nhanh (Cache file)
+PARQUET_FILE = 'data_cache.parquet' 
+EXCEL_FILE = 'data.xlsb' # File gốc của bạn
+
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
 
 # --- HÀM TẠO CALLBACK ---
@@ -27,48 +24,59 @@ def set_state(name):
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU ---
-@st.cache_data
-def nap_du_lieu_tu_csdl():
-    EXCEL_FILE = 'data.xlsb'
-    
-    if not os.path.exists(DB_FILE):
-        if not os.path.exists(EXCEL_FILE):
-            st.error(f"❌ Lỗi: Thiếu cả file CSDL ({DB_FILE}) lẫn file Excel ({EXCEL_FILE}).")
-            return pd.DataFrame()
-        
+# --- HÀM NẠP DỮ LIỆU TỐI ƯU (DÙNG PARQUET) ---
+@st.cache_data(ttl=3600) # Cache dữ liệu trong 1 giờ để không phải load lại
+def nap_du_lieu_toi_uu():
+    # 1. Ưu tiên đọc file Parquet (Siêu nhanh)
+    if os.path.exists(PARQUET_FILE):
         try:
-            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
-            df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='pyxlsb')
-            df_init.columns = df_init.columns.str.strip()
-            
-            engine = create_engine(f'sqlite:///{DB_FILE}')
-            df_init.to_sql(TEN_BANG, engine, if_exists='replace', index=False)
-            engine.dispose()
-            st.success("✅ CSDL đã được xây dựng thành công.")
-        except Exception as e:
-            st.error(f"❌ Lỗi tạo CSDL: {e}")
-            return pd.DataFrame()
+            df = pd.read_parquet(PARQUET_FILE)
+            # Đảm bảo các cột quan trọng là dạng chuỗi để tránh lỗi
+            cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai']
+            for col in cols_to_str:
+                if col in df.columns:
+                    df[col] = df[col].astype(str)
+            return df
+        except Exception:
+            pass # Nếu lỗi file parquet thì đọc lại excel
 
+    # 2. Nếu chưa có Parquet, đọc Excel (Lần đầu sẽ chậm)
+    if not os.path.exists(EXCEL_FILE):
+        st.error(f"❌ Không tìm thấy file dữ liệu gốc: {EXCEL_FILE}")
+        return pd.DataFrame()
+    
     try:
-        conn = sqlite3.connect(DB_FILE)
-        df = pd.read_sql(f"SELECT * FROM {TEN_BANG}", conn)
-        conn.close()
-        df.columns = df.columns.str.strip() 
-        return df.astype(str)
-    except Exception:
+        with st.spinner('⚙️ Đang tối ưu hóa dữ liệu lần đầu (Chuyển sang Parquet)... Vui lòng đợi...'):
+            # Đọc file .xlsb
+            df = pd.read_excel(EXCEL_FILE, dtype=str, engine='pyxlsb')
+            df.columns = df.columns.str.strip()
+            
+            # Lưu lại thành Parquet để lần sau chạy nhanh hơn
+            df.to_parquet(PARQUET_FILE)
+            st.toast("✅ Đã tạo bộ nhớ đệm siêu tốc!", icon="🚀")
+            
+        return df
+    except Exception as e:
+        st.error(f"❌ Lỗi đọc file Excel: {e}")
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ CŨ (GIỮ NGUYÊN) ---
+# --- CÁC HÀM HIỂN THỊ ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
         return
     st.success(f"✅ Đã tìm thấy {len(df_ket_qua)} hồ sơ!")
+    
+    # Chỉ hiển thị tối đa 50 kết quả để tránh lag trình duyệt
+    hien_thi_max = 50
+    if len(df_ket_qua) > hien_thi_max:
+        st.warning(f"⚠️ Chỉ hiển thị {hien_thi_max} kết quả đầu tiên để đảm bảo tốc độ.")
+        df_ket_qua = df_ket_qua.head(hien_thi_max)
+
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
-        tieu_de = f"👤 HỒ SƠ SỐ {i+1}: {row.get('hoTen', 'Không tên')} - Mã: {row.get('soBhxh', '---')}"
-        with st.expander(tieu_de, expanded=True):
+        tieu_de = f"👤 HỒ SƠ: {row.get('hoTen', 'Không tên')} - {row.get('soBhxh', '')}"
+        with st.expander(tieu_de, expanded=False): # expanded=False để đóng bớt cho gọn
             c1, c2 = st.columns(2)
             for idx, cot_uu_tien in enumerate(COT_UU_TIEN):
                 gia_tri = "(Trống)"
@@ -93,21 +101,25 @@ def hien_thi_loc_loi(df, ten_cot):
     gia_tri_rong = ['nan', 'none', 'null', '', '0']
     df_loc = df[col_chuan_hoa.isin(gia_tri_rong)]
     if not df_loc.empty:
-        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu ở cột '{ten_cot}'.")
-        st.dataframe(df_loc)
+        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu cột '{ten_cot}'.")
+        st.dataframe(df_loc.head(1000)) # Chỉ hiện 1000 dòng lỗi đầu tiên
     else:
         st.success(f"Tuyệt vời! Cột '{ten_cot}' đầy đủ dữ liệu.")
 
 def hien_thi_kiem_tra_han(df, ten_cot_ngay):
     if ten_cot_ngay not in df.columns:
-        st.error(f"❌ Không tìm thấy cột Ngày Hết Hạn: '{ten_cot_ngay}'.")
+        st.error(f"❌ Không tìm thấy cột: '{ten_cot_ngay}'.")
         return
-    df_temp = df.copy()
+    
+    # Xử lý trên bản sao nhẹ hơn
+    df_temp = df[[ten_cot_ngay, 'hoTen', 'soBhxh']].copy()
+    
     try:
         df_temp[ten_cot_ngay] = pd.to_datetime(df_temp[ten_cot_ngay], dayfirst=True, errors='coerce') 
         df_co_ngay = df_temp.dropna(subset=[ten_cot_ngay])
         hom_nay = datetime.now()
         sau_30_ngay = hom_nay + timedelta(days=30)
+        
         ds_da_het_han = df_co_ngay[df_co_ngay[ten_cot_ngay] < hom_nay].copy()
         ds_sap_het_han = df_co_ngay[(df_co_ngay[ten_cot_ngay] >= hom_nay) & (df_co_ngay[ten_cot_ngay] <= sau_30_ngay)].copy()
         
@@ -120,12 +132,13 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         col1, col2 = st.columns(2)
         col1.metric(label="🔴 ĐÃ HẾT HẠN", value=f"{len(ds_da_het_han)} người")
         col2.metric(label="⚠️ SẮP HẾT HẠN (30 ngày)", value=f"{len(ds_sap_het_han)} người")
+        
         if not ds_da_het_han.empty:
-            st.subheader("🔴 Danh sách đã Hết Hạn")
-            st.dataframe(ds_da_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
+            st.subheader("🔴 Danh sách đã Hết Hạn (Top 500)")
+            st.dataframe(ds_da_het_han.head(500), hide_index=True)
         if not ds_sap_het_han.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết Hạn")
-            st.dataframe(ds_sap_het_han[['hoTen', ten_cot_ngay, 'soBhxh']], hide_index=True)
+            st.subheader("⚠️ Danh sách Sắp Hết Hạn (Top 500)")
+            st.dataframe(ds_sap_het_han.head(500), hide_index=True)
     except Exception as e:
         st.error(f"Lỗi xử lý ngày tháng. Chi tiết: {e}")
 
@@ -134,80 +147,14 @@ def hien_thi_bieu_do(df, ten_cot):
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
         return
     st.markdown(f"### 📊 BIỂU ĐỒ THỐNG KÊ: {ten_cot}")
-    thong_ke = df[ten_cot].value_counts().reset_index()
+    
+    # Giới hạn số lượng nhóm để biểu đồ không bị đơ nếu quá nhiều loại
+    thong_ke = df[ten_cot].value_counts().head(20).reset_index()
     thong_ke.columns = ['Phân loại', 'Số lượng'] 
-    fig = px.bar(thong_ke, x='Phân loại', y='Số lượng', text='Số lượng', color='Phân loại', title=f"Phân bố theo {ten_cot}")
+    
+    fig = px.bar(thong_ke, x='Phân loại', y='Số lượng', text='Số lượng', color='Phân loại', title=f"Top 20 phân loại theo {ten_cot}")
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
-
-# --- CHỨC NĂNG MỚI: TRỢ LÝ ẢO AI ---
-ddef hien_thi_tro_ly_ai(df):
-    st.markdown("### 🤖 TRỢ LÝ ẢO AI (Chat với Dữ liệu)")
-    st.info("💡 Bạn có thể hỏi: 'Có bao nhiêu người tên Lan?', 'Vẽ biểu đồ giới tính', hoặc 'Ai sắp hết hạn thẻ?'")
-    
-    # 1. Cấu hình API Key
-    api_key = "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY" 
-    
-    if api_key == "DÁN_MÃ_API_KEY_CỦA_BẠN_VÀO_ĐÂY" or not api_key:
-        st.warning("⚠️ Vui lòng nhập Google API Key vào code để sử dụng.")
-        return
-
-    # 2. Khởi tạo AI (Thêm config để tránh lỗi biểu đồ)
-    llm = GoogleGemini(api_key=api_key)
-    
-    # Config này giúp PandasAI ổn định hơn trên Streamlit Cloud
-    config = {"llm": llm, "enable_cache": False, "save_charts": False} 
-    sdf = SmartDataframe(df, config=config)
-
-    # 3. Giao diện Chat
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Dùng container để gom nhóm lịch sử chat
-    chat_container = st.container()
-    
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                # Nếu nội dung là hình ảnh (đường dẫn file png)
-                if isinstance(message["content"], str) and message["content"].endswith(".png"):
-                    if os.path.exists(message["content"]):
-                        st.image(message["content"])
-                    else:
-                        st.error("Không tìm thấy hình ảnh biểu đồ.")
-                else:
-                    st.markdown(message["content"])
-
-    # Ô nhập liệu nằm bên dưới
-    if prompt := st.chat_input("Hỏi AI về dữ liệu..."):
-        # Hiển thị câu hỏi ngay lập tức
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with chat_container:
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            # AI trả lời
-            with st.chat_message("assistant"):
-                with st.spinner("AI đang suy nghĩ..."):
-                    try:
-                        # AI trả về kết quả (có thể là text, dataframe, hoặc đường dẫn ảnh)
-                        response = sdf.chat(prompt)
-                        
-                        # Xử lý hiển thị kết quả thông minh hơn
-                        if isinstance(response, pd.DataFrame):
-                            st.dataframe(response)
-                            st.session_state.messages.append({"role": "assistant", "content": "Dưới đây là bảng dữ liệu:"})
-                        elif str(response).endswith(".png") and os.path.exists(str(response)):
-                            st.image(response)
-                            # Lưu đường dẫn ảnh vào lịch sử
-                            st.session_state.messages.append({"role": "assistant", "content": str(response)})
-                        else:
-                            st.write(response)
-                            st.session_state.messages.append({"role": "assistant", "content": str(response)})
-                            
-                    except Exception as e:
-                        st.error(f"AI gặp lỗi: {e}")
-
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
@@ -234,8 +181,10 @@ def main():
             authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
-        st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH")
-        df = nap_du_lieu_tu_csdl()
+        st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH (Turbo Mode 🚀)")
+        
+        # Load dữ liệu tối ưu
+        df = nap_du_lieu_toi_uu()
         
         if df.empty:
             st.info("Đang chờ dữ liệu...")
@@ -244,7 +193,13 @@ def main():
         # Sidebar chức năng
         st.sidebar.header("CHỨC NĂNG")
         danh_sach_cot = df.columns.tolist()
-        ten_cot = st.sidebar.selectbox("Cột tra cứu/xử lý:", options=danh_sach_cot, index=0)
+        
+        # Chọn cột thông minh (ưu tiên soBhxh)
+        idx_sobhxh = 0
+        if 'soBhxh' in danh_sach_cot:
+            idx_sobhxh = danh_sach_cot.index('soBhxh')
+            
+        ten_cot = st.sidebar.selectbox("Cột tra cứu/xử lý:", options=danh_sach_cot, index=idx_sobhxh)
         gia_tri_tim = st.sidebar.text_input("Từ khóa tìm kiếm:", placeholder="Ví dụ: Nguyễn Văn A")
 
         st.sidebar.markdown("---")
@@ -256,10 +211,6 @@ def main():
         c3.button("⏳ HẠN BHYT", on_click=set_state, args=('han',))
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         
-        st.sidebar.markdown("---")
-        # Nút Trợ lý AI mới
-        st.sidebar.button("🤖 TRỢ LÝ AI", on_click=set_state, args=('ai',))
-
         # Logic hiển thị
         st.markdown("---")
         for key in ['search', 'loc', 'han', 'bieu', 'chuan', 'ai']:
@@ -271,14 +222,16 @@ def main():
             hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'):
             hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'):
-            hien_thi_tro_ly_ai(df) # Gọi hàm AI mới
         elif gia_tri_tim:
-            df_tra_cuu = df[df[ten_cot].astype(str).str.contains(gia_tri_tim, case=False, na=False)]
+            # Tìm kiếm tối ưu: Chuyển về chuỗi và tìm
+            mask = df[ten_cot].astype(str).str.contains(gia_tri_tim, case=False, na=False)
+            df_tra_cuu = df[mask]
             hien_thi_uu_tien(df_tra_cuu)
         else:
-            st.info("👈 Vui lòng chọn chức năng bên trái.")
-            st.dataframe(df.head())
+            st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa.")
+            # Không hiển thị toàn bộ 100k dòng để tránh lag, chỉ hiện top 10
+            st.caption("Dữ liệu mẫu (10 dòng đầu):")
+            st.dataframe(df.head(10))
 
     elif st.session_state["authentication_status"] is False:
         st.error('Tên đăng nhập hoặc mật khẩu không đúng.')
