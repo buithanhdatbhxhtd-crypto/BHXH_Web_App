@@ -46,11 +46,12 @@ def load_users():
 def save_users(config):
     with open(USER_DB_FILE, 'w') as f: json.dump(config, f)
 
-# --- GIAO DIỆN QUẢN LÝ USER (ĐÃ THÊM CHỨC NĂNG XÓA) ---
+# --- GIAO DIỆN QUẢN LÝ USER (ADMIN) ---
 def hien_thi_quan_ly_user(config):
-    st.markdown("### 👥 QUẢN LÝ NGƯỜI DÙNG")
+    st.markdown("### 👥 QUẢN TRỊ NGƯỜI DÙNG")
     
-    tab1, tab2 = st.tabs(["➕ Thêm User", "❌ Xóa User"])
+    # Thêm Tab Đổi Mật khẩu vào đây
+    tab1, tab2, tab3 = st.tabs(["➕ Thêm User", "🔑 Đổi Mật khẩu", "❌ Xóa User"])
 
     # TAB 1: THÊM USER
     with tab1:
@@ -80,11 +81,32 @@ def hien_thi_quan_ly_user(config):
                 else:
                     st.warning("⚠️ Vui lòng điền đủ thông tin.")
 
-    # TAB 2: XÓA USER (MỚI)
+    # TAB 2: ĐỔI MẬT KHẨU (CHỨC NĂNG MỚI)
     with tab2:
-        st.warning("⚠️ Hành động xóa không thể hoàn tác. User bị xóa sẽ không thể đăng nhập.")
+        st.warning("⚠️ Admin có quyền đặt lại mật khẩu cho bất kỳ user nào.")
+        list_all_users = list(config['usernames'].keys())
         
-        # Lấy danh sách user trừ chính mình ra (Admin không được tự xóa mình)
+        col_reset_1, col_reset_2 = st.columns([3, 1])
+        with col_reset_1:
+            user_to_reset = st.selectbox("Chọn tài khoản cần đổi mật khẩu:", list_all_users)
+            new_pass_reset = st.text_input("Nhập mật khẩu mới:", type="password", key="new_pass_reset")
+        
+        with col_reset_2:
+            st.write("") 
+            st.write("")
+            if st.button("🔄 Cập nhật", type="primary"):
+                if new_pass_reset:
+                    # Mã hóa và lưu
+                    new_hash = bcrypt.hashpw(new_pass_reset.encode(), bcrypt.gensalt()).decode()
+                    config['usernames'][user_to_reset]['password'] = new_hash
+                    save_users(config)
+                    st.success(f"✅ Đã đổi mật khẩu cho user: {user_to_reset}")
+                else:
+                    st.error("Vui lòng nhập mật khẩu mới.")
+
+    # TAB 3: XÓA USER
+    with tab3:
+        st.error("⚠️ Hành động xóa không thể hoàn tác.")
         current_user = st.session_state["username"]
         list_users_to_delete = [u for u in config['usernames'].keys() if u != current_user]
         
@@ -93,7 +115,7 @@ def hien_thi_quan_ly_user(config):
             with col_del_1:
                 user_to_delete = st.selectbox("Chọn tài khoản cần xóa:", list_users_to_delete)
             with col_del_2:
-                st.write("") # Spacer
+                st.write("") 
                 st.write("")
                 if st.button("🗑️ Xác nhận xóa", type="primary"):
                     try:
@@ -104,7 +126,7 @@ def hien_thi_quan_ly_user(config):
                     except Exception as e:
                         st.error(f"Lỗi: {e}")
         else:
-            st.info("Hiện tại không có tài khoản nào khác để xóa.")
+            st.info("Không có tài khoản nào khác để xóa.")
 
     # HIỂN THỊ DANH SÁCH
     st.divider()
@@ -174,7 +196,7 @@ def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
         try:
             df = pd.read_parquet(PARQUET_FILE)
-            cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai']
+            cols_to_str = ['soBhxh', 'soCmnd', 'soDienThoai', 'ngaySinh', 'hanTheDen']
             for col in cols_to_str:
                 if col in df.columns: df[col] = df[col].astype(str)
             return df
@@ -365,14 +387,18 @@ def main():
     authenticator.login(location='main')
 
     if st.session_state["authentication_status"]:
+        # Lấy thông tin user hiện tại
         username = st.session_state["username"]
         user_role = user_config['usernames'][username].get('role', 'user')
         user_name_display = user_config['usernames'][username]['name']
 
         with st.sidebar:
             st.write(f'Xin chào, **{user_name_display}**! 👋')
-            if user_role == 'admin': st.caption("👑 Quản trị viên")
-            else: st.caption("👤 Người dùng")
+            if user_role == 'admin':
+                st.caption("👑 Quản trị viên")
+            else:
+                st.caption("👤 Người dùng")
+                
             authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
@@ -417,8 +443,10 @@ def main():
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do_tuong_tac(df, ten_cot)
         elif st.session_state.get('ai'): hien_thi_chatbot_thong_minh(df)
+        # Chỉ admin mới vào được 2 hàm này
         elif st.session_state.get('admin_data') and user_role == 'admin': hien_thi_quan_tri_data()
         elif st.session_state.get('admin_user') and user_role == 'admin': hien_thi_quan_ly_user(user_config)
+        
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
