@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth
 import yaml
-import bcrypt # Dùng thư viện gốc để tránh lỗi version
+import bcrypt
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
@@ -26,16 +26,21 @@ def set_state(name):
 # --- HÀM NẠP DỮ LIỆU ---
 @st.cache_data
 def nap_du_lieu_tu_csdl():
-    EXCEL_FILE = 'dữ liệu bhxh.xlsx' 
+    # TÊN FILE MỚI: Đuôi .xlsb
+    EXCEL_FILE = 'dữ liệu bhxh.xlsb' 
     
     if not os.path.exists(DB_FILE):
         if not os.path.exists(EXCEL_FILE):
             st.error(f"❌ Lỗi: Thiếu cả file CSDL ({DB_FILE}) lẫn file Excel ({EXCEL_FILE}).")
+            st.info("Vui lòng kiểm tra xem bạn đã upload file 'dữ liệu bhxh.xlsb' lên GitHub chưa.")
             return pd.DataFrame()
         
         try:
-            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
-            df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='openpyxl')
+            st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel (.xlsb). Vui lòng đợi...")
+            
+            # --- THAY ĐỔI QUAN TRỌNG Ở ĐÂY ---
+            # Dùng engine='pyxlsb' để đọc file binary excel
+            df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='pyxlsb')
             df_init.columns = df_init.columns.str.strip()
             
             engine = create_engine(f'sqlite:///{DB_FILE}')
@@ -121,9 +126,8 @@ def hien_thi_bieu_do(df, ten_cot):
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
-    # 1. CẤU HÌNH TÀI KHOẢN (Dùng bcrypt trực tiếp để tránh lỗi thư viện)
+    # 1. CẤU HÌNH TÀI KHOẢN (Dùng bcrypt trực tiếp)
     mat_khau_raw = "12345"
-    # Tạo hash bằng bcrypt chuẩn
     hashed_pw = bcrypt.hashpw(mat_khau_raw.encode(), bcrypt.gensalt()).decode()
     
     credentials = {
@@ -166,7 +170,7 @@ def main():
 
         df = nap_du_lieu_tu_csdl()
         if df.empty:
-            st.info("Vui lòng kiểm tra file dữ liệu.")
+            st.info("Đang chờ dữ liệu...")
             return 
 
         st.success(f"✅ Hệ thống sẵn sàng: {len(df)} hồ sơ.")
