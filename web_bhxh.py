@@ -169,7 +169,7 @@ def hien_thi_tro_ly_ai_lite(df):
                     
                     # --- SỬA LỖI TẠI ĐÂY: ĐỔI TÊN MODEL ---
                     # Thử dùng bản Pro mạnh mẽ
-                    model = genai.GenerativeModel('gemini-1.5-pro') 
+                    model = genai.GenerativeModel('gemini-pro') 
                     # --------------------------------------
                     
                     response = model.generate_content(context)
