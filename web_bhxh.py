@@ -30,7 +30,10 @@ def log_action(username, action, detail=""):
     """Ghi lại hoạt động của người dùng vào file CSV."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_exists = os.path.isfile(LOG_FILE)
+    
+    # Giới hạn độ dài chi tiết để tránh lỗi file CSV quá lớn
     detail = str(detail)[:150] 
+
     with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         if not file_exists:
@@ -325,38 +328,68 @@ def hien_thi_bieu_do_tuong_tac(df, ten_cot):
 def hien_thi_chatbot_thong_minh(df):
     log_action(st.session_state["username"], "Xem Chatbot", ""); st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
     if "messages" not in st.session_state: st.session_state.messages = []
+    
+    # Hiển thị tin nhắn (Dòng này đã được sửa lỗi cú pháp trước đó)
     for msg in st.session_state.messages: 
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
     if prompt := st.chat_input("Nhập yêu cầu..."):
-        # FIX CÚ PHÁP TẠI ĐÂY (NGẮT DÒNG)
         st.session_state.messages.append({"role": "user", "content": prompt})
-        log_action(st.session_state["username"], "Chat AI", prompt)
         with st.chat_message("user"): st.markdown(prompt) 
+        log_action(st.session_state["username"], "Chat AI", prompt)
         
         with st.chat_message("assistant"):
-            df_res = df.copy(); df_res['hoTen_khongdau'] = df_res['hoTen'].apply(lambda x: xoa_dau_tieng_viet(str(x))); filters = [] 
+            df_res = df.copy()
+            df_res['hoTen_khongdau'] = df_res['hoTen'].apply(lambda x: xoa_dau_tieng_viet(str(x)))
+            prompt_khong_dau = xoa_dau_tieng_viet(prompt)
+            filters = [] 
+            
             try:
-                date_m = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', prompt);
+                # 1. TÌM NGÀY THÁNG
+                date_m = re.search(r'\d{1,2}[/-]\d{1,2}[/-]\d{4}', prompt)
                 if date_m:
-                    ngay_raw = date_m.group().replace('-', '/');
+                    ngay_raw = date_m.group().replace('-', '/')
                     try:
-                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y'); mask_date = df_res['ngaySinh'].astype(str).str.contains(nd); df_res = df_res[mask_date]; filters.append(f"Ngày sinh: **{nd}**")
+                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y')
+                        mask_date = df_res['ngaySinh'].astype(str).str.contains(nd)
+                        df_res = df_res[mask_date]
+                        filters.append(f"Ngày sinh: **{nd}**")
+                        prompt_khong_dau = prompt_khong_dau.replace(xoa_dau_tieng_viet(ngay_raw), "")
                     except: pass
-                nums = re.findall(r'\b\d{5,}\b', prompt);
+                
+                # 2. TÌM MÃ SỐ
+                nums = re.findall(r'\b\d{5,}\b', prompt)
                 for n in nums:
-                    if date_m and n in date_m.group(): continue; mask_so = (df_res['soBhxh'].astype(str).str.contains(n)) | (df_res['soCmnd'].astype(str).str.contains(n)); df_res = df_res[mask_so]; filters.append(f"Mã: {n}")
-                tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"];
-                p_clean = xoa_dau_tieng_viet(prompt); for w in tu_rac: p_clean = re.sub(r'\b' + w + r'\b', '', p_clean);
-                p_clean = re.sub(r'\b(bieu do|thong ke|han|het han)\b', '', p_clean); ten = re.sub(r'\s+', ' ', p_clean).strip();
+                    if date_m and n in date_m.group(): continue
+                    mask_so = (df_res['soBhxh'].astype(str).str.contains(n)) | (df_res['soCmnd'].astype(str).str.contains(n))
+                    df_res = df_res[mask_so]
+                    filters.append(f"Mã số: **{n}**")
+                    prompt_khong_dau = prompt_khong_dau.replace(n, "")
+                
+                # 3. TÌM TÊN (SỬA LỖI CÚ PHÁP TẠI ĐÂY)
+                tu_rac = ["tim", "loc", "cho", "toi", "nguoi", "co", "ngay", "sinh", "ten", "la", "o", "que"]
+                
+                p_clean = xoa_dau_tieng_viet(prompt) # Khởi tạo p_clean trước
+                
+                for w in tu_rac: 
+                    p_clean = re.sub(r'\b' + w + r'\b', ' ', p_clean) # Đã sửa lỗi cú pháp dòng 360
+
+                p_clean = re.sub(r'\b(bieu do|thong ke|han|het han)\b', ' ', p_clean)
+                ten = re.sub(r'\s+', ' ', p_clean).strip()
+                
                 if len(ten) > 1:
-                    df_res = df_res[df_res['hoTen_khongdau'].str.contains(ten)]; filters.append(f"Tên: {ten}")
+                    df_res = df_res[df_res['hoTen_khongdau'].str.contains(ten)]
+                    filters.append(f"Tên chứa: **{ten}**")
+                
+                # 4. TỔNG HỢP
                 if "bieu do" in xoa_dau_tieng_viet(prompt):
-                    cot_ve = 'gioiTinh'; 
-                    if "tinh" in xoa_dau_tieng_viet(prompt): cot_ve = 'maTinh';
-                    st.write(f"📈 Biểu đồ: {cot_ve}"); hien_thi_bieu_do_tuong_tac(df, cot_ve)
+                    cot_ve = 'gioiTinh'
+                    if "tinh" in xoa_dau_tieng_viet(prompt): cot_ve = 'maTinh'
+                    st.write(f"📈 Đang vẽ biểu đồ: {cot_ve}")
+                    hien_thi_bieu_do_tuong_tac(df, cot_ve)
                 elif "han" in xoa_dau_tieng_viet(prompt) and "het" in xoa_dau_tieng_viet(prompt):
-                    st.write("⏳ Kiểm tra hạn BHYT..."); hien_thi_kiem_tra_han(df, 'hanTheDen')
+                    st.write("⏳ Kiểm tra hạn BHYT...")
+                    hien_thi_kiem_tra_han(df, 'hanTheDen')
                 elif filters:
                     st.write(f"🔍 Điều kiện: {' + '.join(filters)}")
                     if not df_res.empty:
@@ -365,15 +398,15 @@ def hien_thi_chatbot_thong_minh(df):
                     else: st.warning("Không tìm thấy ai.")
                 else: st.info("🤖 Hãy nhập tên hoặc ngày sinh để tìm kiếm.")
             except Exception as e: st.error(f"Lỗi xử lý: {e}")
-
 # --- MAIN ---
 def main():
     user_config = load_users()
     authenticator = stauth.Authenticate(user_config, 'bhxh_cookie', 'key_bi_mat_rat_dai_va_kho_doan_123', 30)
     
+    # FIX LỖI: Chỉ gọi login, không lấy giá trị trả về
     authenticator.login(location='main') 
 
-    if st.session_state["authentication_status"]:
+    if st.session_state.get("authentication_status"):
         if 'logged_in' not in st.session_state:
             log_action(st.session_state["username"], "Đăng nhập", "Thành công")
             st.session_state['logged_in'] = True
@@ -396,7 +429,7 @@ def main():
         if df.empty:
             st.warning("⚠️ Chưa có dữ liệu.")
             if user_role == 'admin':
-                st.sidebar.button("⚙️ CẬP NHẬT DATA", on_click=set_state, args=('admin_data',))
+                st.sidebar.button("⚙️ QUẢN TRỊ DATA", on_click=set_state, args=('admin_data',))
                 if st.session_state.get('admin_data'): hien_thi_quan_tri_data()
             return
 
