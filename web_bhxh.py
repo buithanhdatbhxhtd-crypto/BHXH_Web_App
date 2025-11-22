@@ -147,7 +147,7 @@ def main():
 name, authentication_status, username = authenticator.login('Đăng nhập', 'main')
 
     # 4. Xử lý sau đăng nhập
-    if authentication_status:
+if authentication_status:
         # --- GIAO DIỆN CHÍNH SAU KHI ĐĂNG NHẬP ---
         with st.sidebar:
             st.write(f'Xin chào, **{name}**! 👋')
