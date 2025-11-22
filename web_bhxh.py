@@ -370,9 +370,10 @@ def main():
     user_config = load_users()
     authenticator = stauth.Authenticate(user_config, 'bhxh_cookie', 'key_bi_mat_rat_dai_va_kho_doan_123', 30)
     
+    # FIX LỖI: Chỉ gọi login, không lấy giá trị trả về
     authenticator.login(location='main') 
 
-    if st.session_state["authentication_status"]:
+    if st.session_state.get("authentication_status"):
         if 'logged_in' not in st.session_state:
             log_action(st.session_state["username"], "Đăng nhập", "Thành công")
             st.session_state['logged_in'] = True
