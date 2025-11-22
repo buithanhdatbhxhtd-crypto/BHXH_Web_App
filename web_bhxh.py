@@ -5,7 +5,7 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai 
+import google.generativeai as genai
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -21,7 +21,7 @@ def set_state(name):
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU (TURBO MODE) ---
+# --- HÀM NẠP DỮ LIỆU ---
 @st.cache_data(ttl=3600)
 def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
@@ -54,10 +54,9 @@ def hien_thi_uu_tien(df_ket_qua):
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
-    hien_thi_max = 50
-    if len(df_ket_qua) > hien_thi_max:
-        st.warning(f"⚠️ Chỉ hiện {hien_thi_max} kết quả đầu để mượt.")
-        df_ket_qua = df_ket_qua.head(hien_thi_max)
+    if len(df_ket_qua) > 50:
+        st.warning(f"⚠️ Chỉ hiện 50 kết quả đầu.")
+        df_ket_qua = df_ket_qua.head(50)
 
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
@@ -120,20 +119,24 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: GEMINI FLASH (Đã gắn Key Mới) ---
+# --- CHỨC NĂNG AI: NHẬP KEY TRỰC TIẾP ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Gemini 1.5 Flash)")
-    st.info("💡 AI trả lời dựa trên dữ liệu mẫu. Tốc độ phản hồi cực nhanh.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Gemini)")
+    
+    # --- Ô NHẬP KEY TRỰC TIẾP ---
+    api_key_input = st.text_input("🔑 Nhập Google API Key của bạn vào đây:", type="password", help="Lấy key tại aistudio.google.com")
+    
+    if not api_key_input:
+        st.info("👈 Vui lòng dán API Key để bắt đầu chat.")
+        st.markdown("[👉 Bấm vào đây để lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
+        return
 
-    # API Key MỚI CỦA BẠN
-    API_KEY = "AIzaSyD_xAx2MfvRsdHmW_wFAKjN0UyWwdLBJ9g" 
-
-    # Cấu hình Gemini
+    # Cấu hình Gemini với Key người dùng nhập
     try:
-        genai.configure(api_key=API_KEY)
+        genai.configure(api_key=api_key_input)
         model = genai.GenerativeModel('gemini-1.5-flash')
     except Exception as e:
-        st.error(f"Lỗi cấu hình AI: {e}")
+        st.error(f"Key không hợp lệ: {e}")
         return
 
     if "messages" not in st.session_state:
@@ -163,14 +166,14 @@ def hien_thi_tro_ly_ai_lite(df):
                     {data_sample}
                     
                     Câu hỏi người dùng: "{prompt}"
-                    Hãy trả lời ngắn gọn bằng tiếng Việt.
+                    Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
                     """
                     
                     response = model.generate_content(context)
                     st.write(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                 except Exception as e:
-                    st.error(f"Lỗi kết nối: {e}")
+                    st.error(f"Lỗi kết nối (Kiểm tra lại Key): {e}")
 
 # --- MAIN ---
 def main():
