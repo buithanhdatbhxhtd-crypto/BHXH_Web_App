@@ -159,7 +159,7 @@ if authentication_status:
         df = nap_du_lieu_tu_csdl()
         if df.empty:
             st.info("Vui lòng kiểm tra file dữ liệu.")
-        return
+            st.stop()
 
         st.success(f"✅ Hệ thống sẵn sàng: {len(df)} hồ sơ.")
 
