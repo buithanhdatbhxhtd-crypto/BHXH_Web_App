@@ -6,55 +6,42 @@ import os
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth 
+import yaml # Thư viện cần thiết
+from yaml.loader import SafeLoader # Thư viện cần thiết
 
 # --- CẤU HÌNH CSDL ---
 DB_FILE = 'bhxh.db'
 TEN_BANG = 'ho_so_tham_gia'
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiIh', 'VSS_EMAIL']
 
-# --- CẤU HÌNH XÁC THỰC NGƯỜI DÙNG (AUTHENTICATION) ---
-# Dùng chuỗi đã mã hóa của mật khẩu '12345' (CHỈ DÙNG CHO MỤC ĐÍCH KIỂM THỬ)
-CONFIG = {
-    'credentials': {
-        'usernames': {
-            'bhxh_admin': { 
-                'email': 'admin@bhxh.vn',
-                'name': 'Nguyễn Văn A (Admin)',
-                # Chuỗi đã mã hóa cho '12345'
-                'password': '$2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x' 
-            },
-             'bhxh_user': { 
-                'email': 'user@bhxh.vn',
-                'name': 'Lê Thị B (User)',
-                # Chuỗi đã mã hóa cho '12345'
-                'password': '$2b$12$04l.1FhD0wXf.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x.x' 
-            }
-        }
-    },
-    'cookie': {
-        'expiry_days': 30,
-        # CHUỖI KEY ĐÃ KHẮC PHỤC LỖI VALUEERROR - RẤT DÀI VÀ NGẪU NHIÊN
-        'key': 'f6a4b1c9d2e70f3a5b8c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a', 
-        'name': 'bhxh_cookie_app'
-    }
-}
+# --- CẤU HÌNH XÁC THỰC BẰNG FILE YAML ---
+try:
+    with open('config.yaml') as file:
+        config = yaml.load(file, Loader=SafeLoader)
+except FileNotFoundError:
+    st.error("❌ Lỗi: Không tìm thấy file 'config.yaml'. Vui lòng thêm file này vào repository.")
+    st.stop()
+except Exception as e:
+    st.error(f"❌ Lỗi đọc file YAML: {e}")
+    st.stop()
+
 
 # --- KHỞI TẠO AUTHENTICATOR ---
 authenticator = stauth.Authenticate(
-    CONFIG['credentials'],
-    CONFIG['cookie']['name'],
-    CONFIG['cookie']['key'],
-    CONFIG['cookie']['expiry_days']
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days']
 )
 
 
-# --- HÀM TẠO CALLBACK CHO NÚT BẤM ---
+# --- HÀM TẠO CALLBACK CHO NÚT BẤM (GIỮ NGUYÊN) ---
 def set_state(name):
     for key in ['search', 'loc', 'han', 'bieu']:
         st.session_state[key] = False 
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU (CHẠY 1 LẦN) ---
+# --- HÀM NẠP DỮ LIỆU (CHẠY 1 LẦN) (GIỮ NGUYÊN) ---
 @st.cache_data
 def nap_du_lieu_tu_csdl():
     DB_FILE = 'bhxh.db'
