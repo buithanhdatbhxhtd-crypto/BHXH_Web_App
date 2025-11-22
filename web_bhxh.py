@@ -166,14 +166,17 @@ def hien_thi_tro_ly_ai_lite(df):
                     """
                     
                     genai.configure(api_key=API_KEY)
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # --- SỬA LỖI TẠI ĐÂY: ĐỔI TÊN MODEL ---
+                    model = genai.GenerativeModel('gemini-1.5-flash') 
+                    # --------------------------------------
+                    
                     response = model.generate_content(context)
                     
                     st.write(response.text)
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
                 except Exception as e:
                     st.error(f"Lỗi kết nối AI: {e}")
-
 # --- MAIN ---
 def main():
     # Mật khẩu 12345
