@@ -35,14 +35,12 @@ def nap_du_lieu_tu_csdl():
         
         try:
             st.warning("⚠️ Đang tự động xây dựng CSDL từ file Excel. Vui lòng đợi...")
-            # Đọc file Excel
             df_init = pd.read_excel(EXCEL_FILE, dtype=str, engine='openpyxl')
             df_init.columns = df_init.columns.str.strip()
             
-            # Tạo engine và lưu vào SQLite
             engine = create_engine(f'sqlite:///{DB_FILE}')
             df_init.to_sql(TEN_BANG, engine, if_exists='replace', index=False)
-            engine.dispose() # Đóng kết nối engine
+            engine.dispose()
             st.success("✅ CSDL đã được xây dựng thành công.")
         except Exception as e:
             st.error(f"❌ Lỗi tạo CSDL: {e}")
@@ -142,16 +140,20 @@ def main():
         config['cookie']['expiry_days']
     )
 
-    # 3. Hiển thị Form Đăng nhập
-    # Thêm chữ 'Đăng nhập' vào tham số đầu tiên
-    name, authentication_status, username = authenticator.login('Đăng nhập', 'main')
+    # 3. Hiển thị Form Đăng nhập (Code chuẩn mới)
+    # Trong bản mới, login() tự động render và lưu trạng thái vào session_state
+    authenticator.login(location='main')
 
-    # 4. Xử lý sau đăng nhập
-    if authentication_status:
+    # 4. Kiểm tra trạng thái đăng nhập từ session_state
+    if st.session_state["authentication_status"]:
         # --- GIAO DIỆN CHÍNH SAU KHI ĐĂNG NHẬP ---
+        
+        # Lấy tên người dùng để hiển thị chào mừng
+        name = st.session_state["name"]
+        
         with st.sidebar:
             st.write(f'Xin chào, **{name}**! 👋')
-            authenticator.logout('Đăng xuất', 'main')
+            authenticator.logout('Đăng xuất', 'sidebar')
             st.markdown("---")
         
         st.title("🌐 HỆ THỐNG QUẢN LÝ BHXH")
@@ -159,7 +161,8 @@ def main():
         df = nap_du_lieu_tu_csdl()
         if df.empty:
             st.info("Vui lòng kiểm tra file dữ liệu.")
-            st.stop()
+            # Dùng return để thoát hàm main, tránh lỗi thụt dòng
+            return 
 
         st.success(f"✅ Hệ thống sẵn sàng: {len(df)} hồ sơ.")
 
@@ -184,7 +187,7 @@ def main():
         # Logic hiển thị
         st.markdown("---")
         
-        # Khởi tạo session state nếu chưa có
+        # Khởi tạo session state chức năng nếu chưa có
         for key in ['search', 'loc', 'han', 'bieu', 'chuan']:
             if key not in st.session_state:
                 st.session_state[key] = False
@@ -206,9 +209,9 @@ def main():
             st.info("👈 Vui lòng chọn chức năng hoặc nhập từ khóa bên trái.")
             st.dataframe(df.head())
 
-    elif authentication_status is False:
+    elif st.session_state["authentication_status"] is False:
         st.error('Tên đăng nhập hoặc mật khẩu không đúng.')
-    elif authentication_status is None:
+    elif st.session_state["authentication_status"] is None:
         st.warning('Vui lòng đăng nhập để tiếp tục.')
 
 if __name__ == "__main__":
