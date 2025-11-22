@@ -5,7 +5,7 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import google.generativeai as genai # Thư viện AI nhẹ
+import google.generativeai as genai # Thư viện AI
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
@@ -21,7 +21,7 @@ def set_state(name):
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU ---
+# --- HÀM NẠP DỮ LIỆU (TURBO MODE) ---
 @st.cache_data(ttl=3600)
 def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
@@ -120,21 +120,59 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG MỚI: AI LITE (KHÔNG TREO MÁY) ---
-# --- CHỨC NĂNG MỚI: AI LITE (KHÔNG TREO MÁY) ---
+# --- CHỨC NĂNG AI: PHẦN QUAN TRỌNG ĐÃ ĐƯỢC SỬA ---
 def hien_thi_tro_ly_ai_lite(df):
     st.markdown("### 🤖 TRỢ LÝ AI (Bản Nhẹ)")
-    st.info("💡 AI này trả lời dựa trên cấu trúc và 10 dòng dữ liệu mẫu. Nó rất nhanh và không làm treo máy.")
+    st.info("💡 AI trả lời dựa trên 10 dòng dữ liệu mẫu để đảm bảo tốc độ.")
 
-    # 1. Cấu hình API Key (Đã điền Key của bạn)
+    # 1. API Key (Đã điền sẵn)
     API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550" 
 
-    # (Đã xóa đoạn kiểm tra if API_KEY == "DÁN_MÃ..." để không báo lỗi nữa)
-
+    # 2. Quản lý lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
-    # ... (Phần còn lại của hàm giữ nguyên)
+
+    # Hiển thị lịch sử
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # 3. Xử lý câu hỏi
+    if prompt := st.chat_input("Hỏi gì đó về dữ liệu..."):
+        # Hiện câu hỏi người dùng
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # AI trả lời
+        with st.chat_message("assistant"):
+            with st.spinner("AI đang đọc dữ liệu..."):
+                try:
+                    # Chuẩn bị dữ liệu mẫu gửi cho AI
+                    data_sample = df.head(10).to_markdown(index=False)
+                    columns_info = ", ".join(df.columns.tolist())
+                    total_rows = len(df)
+                    
+                    # Prompt gửi cho AI
+                    context = f"""
+                    Bạn là trợ lý dữ liệu BHXH. 
+                    - Tổng số dòng dữ liệu: {total_rows}
+                    - Các cột: {columns_info}
+                    - Dữ liệu mẫu (10 dòng đầu):
+                    {data_sample}
+                    
+                    Câu hỏi: "{prompt}"
+                    Hãy trả lời dựa trên thông tin trên.
+                    """
+                    
+                    genai.configure(api_key=API_KEY)
+                    model = genai.GenerativeModel('gemini-pro')
+                    response = model.generate_content(context)
+                    
+                    st.write(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                except Exception as e:
+                    st.error(f"Lỗi kết nối AI: {e}")
 
 # --- MAIN ---
 def main():
@@ -173,7 +211,6 @@ def main():
         c4.button("📊 BIỂU ĐỒ", on_click=set_state, args=('bieu',))
         
         st.sidebar.markdown("---")
-        # Nút AI đã quay lại!
         st.sidebar.button("🤖 TRỢ LÝ AI", on_click=set_state, args=('ai',))
 
         st.markdown("---")
@@ -183,7 +220,7 @@ def main():
         if st.session_state.get('loc'): hien_thi_loc_loi(df, ten_cot)
         elif st.session_state.get('han'): hien_thi_kiem_tra_han(df, ten_cot)
         elif st.session_state.get('bieu'): hien_thi_bieu_do(df, ten_cot)
-        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df) # Gọi hàm AI Lite
+        elif st.session_state.get('ai'): hien_thi_tro_ly_ai_lite(df) # Gọi hàm AI
         elif tim_kiem:
             mask = df[ten_cot].astype(str).str.contains(tim_kiem, case=False, na=False)
             hien_thi_uu_tien(df[mask])
