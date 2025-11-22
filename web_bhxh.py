@@ -16,7 +16,7 @@ st.set_page_config(page_title="BHXH Web Manager", layout="wide")
 # --- CẤU HÌNH CSDL ---
 DB_FILE = 'bhxh.db'
 TEN_BANG = 'ho_so_tham_gia'
-COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiIh', 'VSS_EMAIL']
+COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
 
 # --- HÀM TẠO CALLBACK ---
 def set_state(name):
