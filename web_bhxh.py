@@ -110,9 +110,21 @@ def hien_thi_loc_loi(df, ten_cot):
     if ten_cot not in df.columns:
         st.error(f"❌ Không tìm thấy cột '{ten_cot}'.")
         return
-    df_loc = df[df[ten_cot].isna() | (df[ten_cot].str.strip() == "nan") | (df[ten_cot] == "")]
+    
+    # Chuẩn hóa dữ liệu để kiểm tra: 
+    # 1. Chuyển hết về dạng Chuỗi (text)
+    # 2. Xóa khoảng trắng thừa ở đầu/cuối (strip)
+    # 3. Chuyển về chữ thường (lower) để 'NaN' cũng giống 'nan'
+    col_chuan_hoa = df[ten_cot].astype(str).str.strip().str.lower()
+    
+    # Định nghĩa các giá trị được coi là "Rỗng/Lỗi"
+    gia_tri_rong = ['nan', 'none', 'null', '', '0'] # Thêm '0' nếu bạn coi số 0 là thiếu SĐT
+    
+    # Lọc dữ liệu
+    df_loc = df[col_chuan_hoa.isin(gia_tri_rong)]
+
     if not df_loc.empty:
-        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu cột '{ten_cot}'.")
+        st.warning(f"⚠️ TÌM THẤY {len(df_loc)} hồ sơ thiếu dữ liệu ở cột '{ten_cot}'.")
         st.dataframe(df_loc)
     else:
         st.success(f"Tuyệt vời! Cột '{ten_cot}' đầy đủ dữ liệu.")
