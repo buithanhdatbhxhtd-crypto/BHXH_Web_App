@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import streamlit_authenticator as stauth
 import yaml
+import bcrypt # Dùng thư viện gốc để tránh lỗi version
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide")
@@ -120,25 +121,24 @@ def hien_thi_bieu_do(df, ten_cot):
 
 # --- PHẦN CHÍNH (MAIN) ---
 def main():
-    # 1. CẤU HÌNH TÀI KHOẢN TRỰC TIẾP (Bỏ qua file YAML để tránh lỗi)
-    
-    # Tự động tạo mã hash cho '12345' để đảm bảo khớp 100%
-    passwords_to_hash = ['12345']
-    hashed_passwords = stauth.Hasher(passwords_to_hash).generate()
+    # 1. CẤU HÌNH TÀI KHOẢN (Dùng bcrypt trực tiếp để tránh lỗi thư viện)
+    mat_khau_raw = "12345"
+    # Tạo hash bằng bcrypt chuẩn
+    hashed_pw = bcrypt.hashpw(mat_khau_raw.encode(), bcrypt.gensalt()).decode()
     
     credentials = {
         'usernames': {
             'bhxh_admin': {
                 'name': 'Admin BHXH',
                 'email': 'admin@bhxh.vn',
-                'password': hashed_passwords[0] # Lấy mã hash vừa tạo
+                'password': hashed_pw 
             }
         }
     }
 
     cookie = {
         'name': 'bhxh_cookie',
-        'key': 'mot_chuoi_ky_tu_ngau_nhien_rat_dai_va_bao_mat',
+        'key': 'mot_chuoi_ky_tu_ngau_nhien_rat_dai_va_bao_mat_khong_trung_lap',
         'expiry_days': 30
     }
 
