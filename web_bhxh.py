@@ -65,20 +65,45 @@ def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ nào khớp.")
         return
+    
     st.success(f"✅ Đã tìm thấy {len(df_ket_qua)} hồ sơ!")
+    
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
-        with st.expander(f"👤 HỒ SƠ SỐ {i+1}: {row.get('hoTen', row.get('soBhxh'))}"):
-            du_lieu_uu_tien = {}
-            for cot_uu_tien in COT_UU_TIEN:
+        
+        # Tiêu đề của Expander (Khung mở rộng)
+        tieu_de = f"👤 HỒ SƠ SỐ {i+1}: {row.get('hoTen', 'Không tên')} - Mã: {row.get('soBhxh', '---')}"
+        
+        with st.expander(tieu_de, expanded=True): # expanded=True để mặc định mở ra luôn
+            
+            # --- PHẦN GIAO DIỆN MỚI: Chia 2 cột ---
+            c1, c2 = st.columns(2)
+            
+            # Duyệt qua danh sách cột ưu tiên để hiển thị
+            for idx, cot_uu_tien in enumerate(COT_UU_TIEN):
+                gia_tri = "(Trống)"
+                
+                # Tìm giá trị khớp trong data (không phân biệt hoa thường)
                 for col_excel in df_ket_qua.columns:
                      if cot_uu_tien.lower() == col_excel.lower():
-                         val = str(row[col_excel]) if pd.notna(row[col_excel]) else "(Trống)"
-                         du_lieu_uu_tien[col_excel] = val
+                         val = row[col_excel]
+                         if pd.notna(val) and str(val).strip() != "":
+                             gia_tri = str(val)
                          break
-            st.json(du_lieu_uu_tien)
+                
+                # Định dạng hiển thị đẹp hơn dùng Markdown
+                # Cột chẵn bên trái, cột lẻ bên phải
+                noi_dung = f"**🔹 {cot_uu_tien}:** \n{gia_tri}"
+                
+                if idx % 2 == 0:
+                    c1.markdown(noi_dung)
+                else:
+                    c2.markdown(noi_dung)
+            
+            # ---------------------------------------
             st.markdown("---")
-            st.dataframe(row.to_frame().T)
+            st.caption("Dữ liệu gốc:")
+            st.dataframe(row.to_frame().T, hide_index=True)
 
 def hien_thi_loc_loi(df, ten_cot):
     if ten_cot not in df.columns:
