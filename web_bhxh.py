@@ -5,13 +5,12 @@ import streamlit_authenticator as stauth
 import yaml
 import bcrypt
 import plotly.express as px
-import requests 
-import json
+import google.generativeai as genai # Dùng thư viện chính hãng
 
 # --- CẤU HÌNH TRANG ---
 st.set_page_config(page_title="BHXH Web Manager", layout="wide", initial_sidebar_state="expanded")
 
-# --- CẤU HÌNH FILE ---
+# --- CẤU HÌNH ---
 PARQUET_FILE = 'data_cache.parquet' 
 EXCEL_FILE = 'aaa.xlsb' 
 COT_UU_TIEN = ['hoTen', 'ngaySinh', 'soBhxh', 'hanTheDen', 'soCmnd', 'soDienThoai', 'diaChiLh', 'VSS_EMAIL']
@@ -22,7 +21,7 @@ def set_state(name):
         st.session_state[key] = False
     st.session_state[name] = True
 
-# --- HÀM NẠP DỮ LIỆU ---
+# --- HÀM NẠP DỮ LIỆU (TURBO MODE) ---
 @st.cache_data(ttl=3600)
 def nap_du_lieu_toi_uu():
     if os.path.exists(PARQUET_FILE):
@@ -48,16 +47,17 @@ def nap_du_lieu_toi_uu():
         st.error(f"❌ Lỗi đọc file: {e}")
         return pd.DataFrame()
 
-# --- CÁC HÀM HIỂN THỊ ---
+# --- CÁC HÀM HIỂN THỊ CƠ BẢN ---
 def hien_thi_uu_tien(df_ket_qua):
     if df_ket_qua.empty:
         st.warning("😞 Không tìm thấy hồ sơ.")
         return
     st.success(f"✅ Tìm thấy {len(df_ket_qua)} hồ sơ!")
     
-    if len(df_ket_qua) > 50:
-        st.warning(f"⚠️ Chỉ hiện 50 kết quả đầu.")
-        df_ket_qua = df_ket_qua.head(50)
+    hien_thi_max = 50
+    if len(df_ket_qua) > hien_thi_max:
+        st.warning(f"⚠️ Chỉ hiện {hien_thi_max} kết quả đầu để mượt.")
+        df_ket_qua = df_ket_qua.head(hien_thi_max)
 
     for i in range(len(df_ket_qua)):
         row = df_ket_qua.iloc[i]
@@ -105,10 +105,10 @@ def hien_thi_kiem_tra_han(df, ten_cot_ngay):
         c2.metric("⚠️ SẮP HẾT HẠN", f"{len(ds_sap)}")
         
         if not ds_het.empty:
-            st.subheader("🔴 Danh sách Hết Hạn")
+            st.subheader("🔴 Danh sách Hết Hạn (Top 500)")
             st.dataframe(ds_het.head(500), hide_index=True)
         if not ds_sap.empty:
-            st.subheader("⚠️ Danh sách Sắp Hết")
+            st.subheader("⚠️ Danh sách Sắp Hết (Top 500)")
             st.dataframe(ds_sap.head(500), hide_index=True)
     except Exception as e: st.error(f"Lỗi ngày tháng: {e}")
 
@@ -120,46 +120,20 @@ def hien_thi_bieu_do(df, ten_cot):
     fig.update_traces(textposition='outside')
     st.plotly_chart(fig, use_container_width=True)
 
-# --- CHỨC NĂNG AI: CƠ CHẾ TỰ ĐỘNG THAY ĐỔI MODEL (QUAN TRỌNG) ---
-def call_gemini_final(api_key, prompt):
-    # Danh sách model để thử lần lượt
-    models_to_try = [
-        "gemini-1.5-flash", 
-        "gemini-1.5-pro", 
-        "gemini-1.0-pro", 
-        "gemini-pro"
-    ]
-    
-    headers = {'Content-Type': 'application/json'}
-    data = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    err_log = []
-    
-    for model in models_to_try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        try:
-            response = requests.post(url, headers=headers, data=json.dumps(data), timeout=10)
-            
-            if response.status_code == 200:
-                # Thành công! Trả về kết quả ngay
-                return response.json()['candidates'][0]['content']['parts'][0]['text']
-            else:
-                # Thất bại model này, ghi log và thử cái tiếp theo
-                err_log.append(f"{model}: {response.status_code}")
-                continue
-                
-        except Exception as e:
-            err_log.append(f"{model}: Lỗi mạng")
-            continue
-
-    return f"⚠️ Không thể kết nối AI. Chi tiết lỗi: {', '.join(err_log)}"
-
+# --- CHỨC NĂNG AI: DÙNG GEMINI 1.5 FLASH (BẢN MỚI NHẤT) ---
 def hien_thi_tro_ly_ai_lite(df):
-    st.markdown("### 🤖 TRỢ LÝ AI (Thông Minh)")
-    st.info("💡 AI sẽ tự động tìm phiên bản tốt nhất để trả lời bạn.")
+    st.markdown("### 🤖 TRỢ LÝ AI (Google Gemini)")
+    st.info("💡 Hãy dán API Key mới của bạn vào code để sử dụng.")
 
-    # API Key CỦA BẠN
-    API_KEY = "AIzaSyCN6rglQb1-Ay7fwwo5rtle8q4xZemw550"
+    # ============================================================
+    # 👇 DÁN KEY MỚI CỦA BẠN VÀO GIỮA HAI DẤU NGOẶC KÉP DƯỚI ĐÂY 👇
+    api_key = "AIzaSyD_xAx2MfvRsdHmW_wFAKjN0UyWWdLBJ9g" 
+    # ============================================================
+
+    if not api_key or "DÁN_KEY" in api_key:
+        st.warning("⚠️ Vui lòng tạo API Key mới tại aistudio.google.com và dán vào code.")
+        st.markdown("[👉 Bấm vào đây để lấy Key miễn phí](https://aistudio.google.com/app/apikey)")
+        return
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -175,27 +149,34 @@ def hien_thi_tro_ly_ai_lite(df):
 
         with st.chat_message("assistant"):
             with st.spinner("AI đang suy nghĩ..."):
-                # Dùng to_string để tránh lỗi tabulate
-                data_sample = df.head(10).to_string(index=False)
-                columns_info = ", ".join(df.columns.tolist())
-                total_rows = len(df)
-                
-                context = f"""
-                Bạn là trợ lý dữ liệu BHXH. Thông tin bộ dữ liệu:
-                - Tổng số dòng: {total_rows}
-                - Các cột: {columns_info}
-                - Dữ liệu mẫu (10 dòng đầu):
-                {data_sample}
-                
-                Câu hỏi người dùng: "{prompt}"
-                Hãy trả lời ngắn gọn, hữu ích bằng tiếng Việt.
-                """
-                
-                # Gọi hàm thông minh
-                tra_loi = call_gemini_final(API_KEY, context)
-                
-                st.write(tra_loi)
-                st.session_state.messages.append({"role": "assistant", "content": tra_loi})
+                try:
+                    # Cấu hình AI
+                    genai.configure(api_key=api_key)
+                    # Dùng model chuẩn 1.5 Flash
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # Chuẩn bị dữ liệu
+                    data_sample = df.head(10).to_string(index=False)
+                    total_rows = len(df)
+                    cols_info = ", ".join(df.columns)
+                    
+                    context = f"""
+                    Bạn là chuyên gia phân tích dữ liệu BHXH.
+                    Dữ liệu có {total_rows} dòng. Các cột: {cols_info}.
+                    Dữ liệu mẫu:
+                    {data_sample}
+                    
+                    Người dùng hỏi: "{prompt}"
+                    Trả lời ngắn gọn, súc tích bằng tiếng Việt.
+                    """
+                    
+                    response = model.generate_content(context)
+                    st.write(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    
+                except Exception as e:
+                    st.error(f"Lỗi kết nối: {e}")
+                    st.info("💡 Gợi ý: Key của bạn có thể chưa bật quyền truy cập. Hãy thử tạo Key mới ở 'Project' khác trên Google AI Studio.")
 
 # --- MAIN ---
 def main():
