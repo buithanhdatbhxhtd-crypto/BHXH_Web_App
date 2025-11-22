@@ -30,6 +30,10 @@ def log_action(username, action, detail=""):
     """Ghi lại hoạt động của người dùng vào file CSV."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_exists = os.path.isfile(LOG_FILE)
+    
+    # Giới hạn độ dài chi tiết để tránh lỗi file CSV quá lớn
+    detail = str(detail)[:150] 
+
     with open(LOG_FILE, mode='a', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
         if not file_exists:
@@ -325,7 +329,6 @@ def hien_thi_chatbot_thong_minh(df):
     log_action(st.session_state["username"], "Xem Chatbot", ""); st.markdown("### 🤖 TRỢ LÝ ẢO (Tìm Kiếm Linh Hoạt)")
     if "messages" not in st.session_state: st.session_state.messages = []
     for msg in st.session_state.messages: 
-        # FIX: Dòng lỗi (line 332) đã được sửa lại cú pháp (with/as) chuẩn
         with st.chat_message(msg["role"]): st.markdown(msg["content"])
         
     if prompt := st.chat_input("Nhập yêu cầu..."):
@@ -337,7 +340,7 @@ def hien_thi_chatbot_thong_minh(df):
                 if date_m:
                     ngay_raw = date_m.group().replace('-', '/');
                     try:
-                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y'); mask_date = df_res['ngaySinh'].astype(str).str.contains(nd); df_res = df_res[mask_date]; filters.append(f"Ngày sinh: **{nd}**");
+                        nd = pd.to_datetime(ngay_raw, dayfirst=True).strftime('%d/%m/%Y'); mask_date = df_res['ngaySinh'].astype(str).str.contains(nd); df_res = df_res[mask_date]; filters.append(f"Ngày sinh: **{nd}**")
                     except: pass
                 nums = re.findall(r'\b\d{5,}\b', prompt);
                 for n in nums:
